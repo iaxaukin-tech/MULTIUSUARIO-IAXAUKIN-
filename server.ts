@@ -57,11 +57,19 @@ app.get("/api/config-check", (req, res) => {
 // API Proxy route for Gemini Analysis
 app.post("/api/analyze", async (req, res) => {
   try {
-    const geminiKey = getGeminiApiKey();
+    const headerKey = req.headers["x-gemini-key"] || req.headers["X-Gemini-Key"];
+    let geminiKey = "";
+    
+    if (headerKey && typeof headerKey === "string" && headerKey.trim() !== "") {
+      geminiKey = headerKey.trim();
+    } else {
+      geminiKey = getGeminiApiKey();
+    }
+
     if (!geminiKey || geminiKey.trim() === "") {
       console.error("[IA XAU KIN Server] Clave API de Gemini vacía o no válida en el entorno.");
       return res.status(400).json({
-        error: "API_KEY_MISSING: La clave de API de Gemini no está configurada en los Secretos de AI Studio.",
+        error: "API_KEY_MISSING: La clave de API de Gemini no está configurada en los Secretos de AI Studio ni se ha proporcionado una clave manual.",
         debugInfo: {
           hasPrincipal: !!process.env.GEMINI_API_KEY,
           hasAlternative: !!process.env.GEMINI_API_KEY2

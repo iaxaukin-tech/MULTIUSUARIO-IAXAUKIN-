@@ -169,6 +169,10 @@ export default function App() {
   const [newCodePlan, setNewCodePlan] = useState<SubscriptionPlan>('PRO');
   const [newCodeDuration, setNewCodeDuration] = useState(30);
 
+  // Client-side API Key states for manual override in production/shared mode
+  const [customApiKey, setCustomApiKey] = useState<string>(() => localStorage.getItem("manual_gemini_api_key") || "");
+  const [showKeyConfig, setShowKeyConfig] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Active Firebase Auth Session Listener
@@ -403,7 +407,8 @@ export default function App() {
       const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'x-gemini-key': customApiKey || ''
         },
         body: JSON.stringify({
           mimeType,
@@ -413,8 +418,21 @@ export default function App() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Error desconocido en el servidor.' }));
-        throw new Error(errorData.error || `Error del servidor (${response.status})`);
+        let errorMsg = `Error del servidor (${response.status})`;
+        try {
+          const responseText = await response.text();
+          try {
+            const errorData = JSON.parse(responseText);
+            errorMsg = errorData.error || errorMsg;
+          } catch {
+            if (responseText && responseText.length < 300) {
+              errorMsg = `${errorMsg}: ${responseText}`;
+            }
+          }
+        } catch {
+          errorMsg = `Error del servidor (${response.status}): fallo de lectura`;
+        }
+        throw new Error(errorMsg);
       }
 
       const data = await response.json();
@@ -492,6 +510,18 @@ export default function App() {
                       Mesa de Control (Admin)
                     </button>
                   )}
+
+                  <div className="h-4 w-[1px] bg-slate-200" />
+
+                  {/* API Key settings for shared/production manual entry */}
+                  <button
+                    onClick={() => setShowKeyConfig(true)}
+                    className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-black transition-colors cursor-pointer group uppercase tracking-wider font-extrabold"
+                    title="Configurar Clave API de Gemini"
+                  >
+                    <Settings size={14} className="group-hover:rotate-45 transition-transform duration-300 text-brand-lime" />
+                    <span className="hidden sm:inline">Clave API</span>
+                  </button>
 
                   <div className="h-4 w-[1px] bg-slate-200" />
 
@@ -1130,6 +1160,95 @@ export default function App() {
                       >
                         Confirmar
                       </button>
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
+
+            {/* Custom API Key Configuration Modal */}
+            <AnimatePresence>
+              {showKeyConfig && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center px-6">
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    onClick={() => setShowKeyConfig(false)}
+                    className="absolute inset-0 bg-brand-navy/60 backdrop-blur-sm"
+                  />
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                    className="relative bg-white rounded-[2rem] p-8 max-w-md w-full shadow-2xl border border-slate-100"
+                  >
+                    <div className="w-16 h-16 bg-brand-lime/10 rounded-2xl flex items-center justify-center mb-6">
+                      <Settings className="text-brand-lime" size={32} />
+                    </div>
+                    <h3 className="text-2xl font-serif italic text-slate-900 mb-3">
+                      Clave API de Gemini
+                    </h3>
+                    <p className="text-slate-500 text-sm leading-relaxed mb-6">
+                      Proporciona tu propia clave de API de Gemini para habilitar el motor de IA XAU KIN en enlaces compartidos, producción y fuera de desarrollo.
+                    </p>
+
+                    <div className="space-y-4 mb-6">
+                      <div>
+                        <label className="text-[9px] uppercase tracking-wider font-extrabold text-slate-400 block mb-2">CLAVE API PERSONAL (Google AI Studio)</label>
+                        <input
+                          type="password"
+                          value={customApiKey}
+                          onChange={(e) => setCustomApiKey(e.target.value)}
+                          placeholder="AIzaSy..."
+                          className="w-full h-12 bg-slate-50 border border-slate-250 rounded-xl px-4 text-xs font-mono focus:outline-none focus:border-brand-lime transition-colors"
+                        />
+                      </div>
+                      <p className="text-[10px] text-slate-400 leading-relaxed">
+                        ¿No tienes una clave? Consíguela gratis en{" "}
+                        <a 
+                          href="https://aistudio.google.com/app/apikey" 
+                          target="_blank" 
+                          rel="noreferrer"
+                          className="text-brand-lime font-bold hover:underline"
+                        >
+                          Google AI Studio
+                        </a>. Esta clave se guarda localmente y con total confidencialidad en tu navegador (LocalStorage).
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col gap-3">
+                      <button 
+                        onClick={() => {
+                          if (customApiKey.trim() === "") {
+                            localStorage.removeItem("manual_gemini_api_key");
+                          } else {
+                            localStorage.setItem("manual_gemini_api_key", customApiKey.trim());
+                          }
+                          setShowKeyConfig(false);
+                        }}
+                        className="w-full py-4 bg-brand-navy text-brand-lime rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg"
+                      >
+                        Guardar Clave
+                      </button>
+                      <div className="flex gap-4">
+                        <button 
+                          onClick={() => {
+                            setCustomApiKey("");
+                            localStorage.removeItem("manual_gemini_api_key");
+                            setShowKeyConfig(false);
+                          }}
+                          className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 rounded-xl font-bold text-[9px] uppercase tracking-widest text-red-500 transition-colors"
+                        >
+                          Eliminar Clave
+                        </button>
+                        <button 
+                          onClick={() => setShowKeyConfig(false)}
+                          className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-[9px] uppercase tracking-widest text-slate-600 transition-colors"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
                     </div>
                   </motion.div>
                 </div>
