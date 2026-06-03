@@ -13,23 +13,52 @@ const PORT = 3000;
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
+// Helper to select the correct Gemini API Key
+function getGeminiApiKey(): string {
+  const key1 = (process.env.GEMINI_API_KEY || "").trim();
+  const key2 = (process.env.GEMINI_API_KEY2 || "").trim();
+
+  const isRealKey = (k: string) => {
+    if (!k) return false;
+    // Real keys typically start with AIza
+    if (k.startsWith("AIza")) return true;
+    // Reject known placeholders or empty strings
+    if (k.includes("MY_GEMINI_API_KEY") || k.includes("Default") || k.includes("placeholder") || k === "undefined" || k === "null") {
+      return false;
+    }
+    // If it is long enough and not a placeholder, assume it is real
+    return k.length > 20;
+  };
+
+  // Prioritize GEMINI_API_KEY2 since the user explicitly created it manually
+  if (isRealKey(key2)) return key2;
+  if (isRealKey(key1)) return key1;
+
+  // Fallback if none are "real" but one is non-empty
+  if (key2 && !key2.includes("MY_GEMINI_API_KEY")) return key2;
+  if (key1 && !key1.includes("MY_GEMINI_API_KEY")) return key1;
+
+  return "";
+}
+
 // Debug check endpoint
 app.get("/api/config-check", (req, res) => {
-  const geminiKey = process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY2 || "";
+  const geminiKey = getGeminiApiKey();
   res.json({
     hasPrincipalKey: !!process.env.GEMINI_API_KEY,
     hasAlternativeKey: !!process.env.GEMINI_API_KEY2,
     hasActiveKey: !!geminiKey,
     keyLength: geminiKey.length,
-    keyPrefix: geminiKey ? `${geminiKey.substring(0, 4)}...` : "none"
+    keyPrefix: geminiKey ? `${geminiKey.substring(0, 4)}...` : "none",
+    detectedType: geminiKey.startsWith("AIza") ? "Real API Key (AIza)" : "Fallback/Placeholder"
   });
 });
 
 // API Proxy route for Gemini Analysis
 app.post("/api/analyze", async (req, res) => {
   try {
-    const geminiKey = process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY2 || "";
-    if (!geminiKey || geminiKey.trim() === "" || geminiKey.includes("MY_GEMINI_API_KEY")) {
+    const geminiKey = getGeminiApiKey();
+    if (!geminiKey || geminiKey.trim() === "") {
       console.error("[IA XAU KIN Server] Clave API de Gemini vacía o no válida en el entorno.");
       return res.status(400).json({
         error: "API_KEY_MISSING: La clave de API de Gemini no está configurada en los Secretos de AI Studio.",
