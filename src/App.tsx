@@ -201,6 +201,9 @@ export default function App() {
     if (currentUser?.role === 'ADMIN') {
       const fetchAdminData = async () => {
         try {
+          // Pre-ensure default coupon KINFREE30 is created in database
+          await userStore.ensureDefaultCoupon();
+          
           const [fetchedUsers, fetchedCodes] = await Promise.all([
             userStore.getUsers(),
             userStore.getCodes()

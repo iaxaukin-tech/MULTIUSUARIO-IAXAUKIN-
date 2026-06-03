@@ -218,6 +218,27 @@ export const userStore = {
     }
   },
 
+  // Auto-provision default coupon KINFREE30 if missing for easy testing/evaluation
+  async ensureDefaultCoupon(): Promise<void> {
+    const path = 'activationCodes/KINFREE30';
+    const docRef = doc(db, 'activationCodes', 'KINFREE30');
+    try {
+      const snap = await getDoc(docRef);
+      if (!snap.exists()) {
+        const defaultCode: ActivationCode = {
+          code: 'KINFREE30',
+          plan: 'PRO',
+          durationDays: 30,
+          isUsed: false,
+          createdAt: new Date().toISOString()
+        };
+        await setDoc(docRef, defaultCode);
+      }
+    } catch (err) {
+      console.error("Failed to ensure default coupon:", err);
+    }
+  },
+
   // Admin coupon key generator
   async generateCode(plan: SubscriptionPlan, durationDays: number): Promise<ActivationCode> {
     const prefix = plan.substring(0, 4).toUpperCase();
