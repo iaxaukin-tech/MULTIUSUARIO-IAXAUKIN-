@@ -4,7 +4,6 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { 
   Upload, 
   TrendingUp, 
@@ -34,16 +33,6 @@ import { userStore } from './utils/userStore';
 import { User, ActivationCode, SubscriptionPlan, PLAN_DETAILS } from './types';
 import { auth } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-
-// Initialize Gemini API
-const geminiKey = process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY2 || "";
-const genAI = new GoogleGenAI({ apiKey: geminiKey });
-
-console.log("[IA XAU KIN Debug] Configuración de Clave API detectada:", {
-  tieneClavePrincipal: !!process.env.GEMINI_API_KEY,
-  tieneClaveAlternativa: !!process.env.GEMINI_API_KEY2,
-  tieneKeyFinal: !!geminiKey
-});
 
 const Logo = ({ className = "" }: { className?: string }) => (
   <img 
@@ -409,35 +398,28 @@ export default function App() {
     setError(null);
 
     try {
-      if (!geminiKey) {
-        throw new Error("API_KEY_MISSING: La clave de API de Gemini no está configurada.");
-      }
-
-      const model = "gemini-3-flash-preview";
       const base64Data = image.split(',')[1];
       
-      const result = await genAI.models.generateContent({
-        model: model,
-        contents: [
-          {
-            parts: [
-              { text: SYSTEM_PROMPT },
-              {
-                inlineData: {
-                  mimeType: mimeType,
-                  data: base64Data
-                }
-              },
-              { text: "Ejecutar modelado cuantitativo inmediato sobre esta telemetría visual." }
-            ]
-          }
-        ],
-        config: {
-          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
-        }
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          mimeType,
+          base64Data,
+          systemPrompt: SYSTEM_PROMPT
+        })
       });
 
-      const text = result.text;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Error desconocido en el servidor.' }));
+        throw new Error(errorData.error || `Error del servidor (${response.status})`);
+      }
+
+      const data = await response.json();
+      const text = data.text;
+      
       if (text) {
         setAnalysis(text);
         // Record timestamp asynchronously in Firestore
@@ -455,7 +437,7 @@ export default function App() {
       const errorMessage = err.message || "Error desconocido al analizar el gráfico.";
       
       if (errorMessage.includes("API_KEY_MISSING")) {
-        setError(errorMessage);
+        setError("API_KEY_MISSING: La clave de API de Gemini no está configurada en los Secretos de AI Studio.");
       } else if (errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("429")) {
         setError("CRÉDITOS AGOTADOS: Tu saldo de Google AI Studio se ha terminado o has superado el límite de cuota. Por favor, recarga tus créditos en https://aistudio.google.com/app/billing");
       } else {
