@@ -86,7 +86,7 @@ app.post("/api/analyze", async (req, res) => {
     console.log("[IA XAU KIN Server] Inicializando llamada a Gemini con clave de longitud:", geminiKey.length);
     const genAI = new GoogleGenAI({ apiKey: geminiKey });
     
-    const model = "gemini-3-flash-preview";
+    const model = "gemini-3.5-flash";
     
     const result = await genAI.models.generateContent({
       model: model,
@@ -105,7 +105,7 @@ app.post("/api/analyze", async (req, res) => {
         }
       ],
       config: {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
+        temperature: 0.15
       }
     });
 
