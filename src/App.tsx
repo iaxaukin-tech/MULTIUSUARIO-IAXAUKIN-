@@ -36,7 +36,14 @@ import { auth } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
 // Initialize Gemini API
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const geminiKey = process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY2 || "";
+const genAI = new GoogleGenAI({ apiKey: geminiKey });
+
+console.log("[IA XAU KIN Debug] Configuración de Clave API detectada:", {
+  tieneClavePrincipal: !!process.env.GEMINI_API_KEY,
+  tieneClaveAlternativa: !!process.env.GEMINI_API_KEY2,
+  tieneKeyFinal: !!geminiKey
+});
 
 const Logo = ({ className = "" }: { className?: string }) => (
   <img 
@@ -402,7 +409,7 @@ export default function App() {
     setError(null);
 
     try {
-      if (!process.env.GEMINI_API_KEY) {
+      if (!geminiKey) {
         throw new Error("API_KEY_MISSING: La clave de API de Gemini no está configurada.");
       }
 
