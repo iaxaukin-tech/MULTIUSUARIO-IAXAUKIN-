@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { 
   Upload, 
   TrendingUp, 
@@ -403,41 +404,93 @@ export default function App() {
 
     try {
       const base64Data = image.split(',')[1];
-      
-      const response = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-gemini-key': customApiKey || ''
-        },
-        body: JSON.stringify({
-          mimeType,
-          base64Data,
-          systemPrompt: SYSTEM_PROMPT
-        })
-      });
+      let useClientFallback = false;
+      let text = "";
 
-      if (!response.ok) {
-        let errorMsg = `Error del servidor (${response.status})`;
-        try {
-          const responseText = await response.text();
+      try {
+        console.log("[IA XAU KIN] Intentando análisis por servidor backend...");
+        const response = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-gemini-key': customApiKey || ''
+          },
+          body: JSON.stringify({
+            mimeType,
+            base64Data,
+            systemPrompt: SYSTEM_PROMPT
+          })
+        });
+
+        if (response.status === 404) {
+          console.warn("[IA XAU KIN] El servidor retornó 404. Es un entorno de hosting estático (Shared Link). Activando fallback de navegador...");
+          useClientFallback = true;
+        } else if (!response.ok) {
+          let errorMsg = `Error del servidor (${response.status})`;
           try {
-            const errorData = JSON.parse(responseText);
-            errorMsg = errorData.error || errorMsg;
-          } catch {
-            if (responseText && responseText.length < 300) {
-              errorMsg = `${errorMsg}: ${responseText}`;
+            const responseText = await response.text();
+            try {
+              const errorData = JSON.parse(responseText);
+              errorMsg = errorData.error || errorMsg;
+            } catch {
+              if (responseText && responseText.length < 300) {
+                errorMsg = `${errorMsg}: ${responseText}`;
+              }
             }
+          } catch {
+            errorMsg = `Error del servidor (${response.status}): fallo de lectura`;
           }
-        } catch {
-          errorMsg = `Error del servidor (${response.status}): fallo de lectura`;
+          throw new Error(errorMsg);
+        } else {
+          const data = await response.json();
+          text = data.text;
         }
-        throw new Error(errorMsg);
+      } catch (serverErr: any) {
+        if (serverErr.message && (serverErr.message.includes("404") || serverErr.message.includes("NOT_FOUND"))) {
+          useClientFallback = true;
+        } else if (serverErr instanceof TypeError) {
+          // Network errors (no connection / CORS / offline / server down)
+          console.warn("[IA XAU KIN] Error de conexión con el servidor. Activando fallback de navegador...", serverErr);
+          useClientFallback = true;
+        } else {
+          // Re-throw genuine processing/API/quota errors
+          throw serverErr;
+        }
       }
 
-      const data = await response.json();
-      const text = data.text;
-      
+      if (useClientFallback) {
+        const finalKey = customApiKey.trim();
+        if (!finalKey) {
+          throw new Error("SERVER_STATIC_MODE_NO_KEY: El servidor de análisis no está disponible en este enlace compartido (hosting estático). Para procesar tus gráficos de forma local y 100% gratuita, haz clic en el botón 'Clave API' arriba a la derecha y configura tu clave de Gemini personal de Google AI Studio.");
+        }
+
+        console.log("[IA XAU KIN Client] Inicializando cliente Gemini directo en el navegador...");
+        const genAI = new GoogleGenAI({ apiKey: finalKey });
+        
+        const result = await genAI.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: [
+            {
+              parts: [
+                { text: SYSTEM_PROMPT },
+                {
+                  inlineData: {
+                    mimeType: mimeType,
+                    data: base64Data
+                  }
+                },
+                { text: "Ejecutar modelado cuantitativo inmediato sobre esta telemetría visual." }
+              ]
+            }
+          ],
+          config: {
+            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
+          }
+        });
+
+        text = result.text || "";
+      }
+
       if (text) {
         setAnalysis(text);
         // Record timestamp asynchronously in Firestore
@@ -456,6 +509,8 @@ export default function App() {
       
       if (errorMessage.includes("API_KEY_MISSING")) {
         setError("API_KEY_MISSING: La clave de API de Gemini no está configurada en los Secretos de AI Studio.");
+      } else if (errorMessage.includes("SERVER_STATIC_MODE_NO_KEY")) {
+        setError(errorMessage.replace("SERVER_STATIC_MODE_NO_KEY: ", ""));
       } else if (errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("429")) {
         setError("CRÉDITOS AGOTADOS: Tu saldo de Google AI Studio se ha terminado o has superado el límite de cuota. Por favor, recarga tus créditos en https://aistudio.google.com/app/billing");
       } else {
