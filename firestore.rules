@@ -1,0 +1,142 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global safety net (catch-all) default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Standardized Security Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function getUserRole(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data.role;
+    }
+
+    function getUsername(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data.username;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserRole(request.auth.uid) == 'ADMIN';
+    }
+
+    // Rules for /users/{userId}
+    match /users/{userId} {
+      // Allow custom validation logic for User properties
+      function isValidUser(data) {
+        return data.id == request.auth.uid
+          && data.username is string && data.username.size() >= 3 && data.username.size() <= 32
+          && data.email is string && data.email.size() <= 128
+          && data.role in ['ADMIN', 'USER']
+          && data.plan in ['RETAIL', 'PRO', 'INSTITUTIONAL']
+          && data.status in ['PENDING_APPROVAL', 'ACTIVE', 'EXPIRED', 'INACTIVE']
+          && data.joinedAt is string;
+      }
+
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin(); // Only admins can list users to prevent PII harvesting
+
+      // Standard users can initialize their user profile
+      allow create: if isSignedIn() 
+        && isValidId(userId) 
+        && userId == request.auth.uid 
+        && isValidUser(incoming())
+        // Restrict role and status self-elevation on initial creation except for verified institutional owner
+        && (
+          (('email' in request.auth.token && request.auth.token.email.lower() == 'iaxaukin@gmail.com') && incoming().role == 'ADMIN' && incoming().status == 'ACTIVE')
+          || (incoming().role == 'USER' && incoming().status in ['INACTIVE', 'PENDING_APPROVAL'])
+        );
+
+      // Action-based updates
+      allow update: if isSignedIn() && (
+        isAdmin() || (
+          // Standard User update path
+          request.auth.uid == userId 
+          && incoming().role == existing().role // Role is immutable
+          && (
+            // Action 1: Upload transaction hash for manual approval
+            (
+              incoming().diff(existing()).affectedKeys().hasOnly(['paymentReceiptUrl', 'status', 'plan']) 
+              && incoming().status == 'PENDING_APPROVAL'
+              && incoming().paymentReceiptUrl is string
+              && incoming().paymentReceiptUrl.size() <= 256
+            ) ||
+            // Action 2: Update analysis timestamp (only status must match active)
+            (
+              existing().status == 'ACTIVE'
+              && incoming().diff(existing()).affectedKeys().hasOnly(['lastAnalysisAt']) 
+              && incoming().lastAnalysisAt is string
+            )
+          )
+        )
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // Rules for /activationCodes/{codeId}
+    match /activationCodes/{codeId} {
+      allow get: if isSignedIn() && isValidId(codeId);
+      allow list: if isAdmin(); // Prevent scrapers/brute-forcers from reading all active codes
+      allow create, delete: if isAdmin();
+      
+      allow update: if isSignedIn() && (
+        isAdmin() || (
+          // Action: Consume voucher
+          existing().isUsed == false 
+          && incoming().isUsed == true
+          && incoming().usedBy == getUsername(request.auth.uid)
+          && incoming().diff(existing()).affectedKeys().hasOnly(['isUsed', 'usedBy'])
+        )
+      );
+    }
+
+    // Rules for /analysisHistory/{analysisId}
+    match /analysisHistory/{analysisId} {
+      allow get: if isSignedIn() && isValidId(analysisId) && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid; // Secure Query Enforcer
+      
+      allow create: if isSignedIn()
+        && isValidId(analysisId)
+        && incoming().userId == request.auth.uid
+        && incoming().createdAt is string
+        && incoming().analysisText is string
+        && incoming().analysisText.size() <= 20000; // Size limit boundary check
+        
+      allow update, delete: if isAdmin();
+    }
+
+    // Rules for /usernames/{username}
+    match /usernames/{username} {
+      allow get: if true; // Fully public to check if a username is taken before signing up
+      allow list: if false; // Block listing completely to prevent PII harvesting/leaks
+      
+      allow create: if isSignedIn()
+        && isValidId(username)
+        && incoming().uid == request.auth.uid;
+        
+      allow update, delete: if isAdmin();
+    }
+
+  }
+}

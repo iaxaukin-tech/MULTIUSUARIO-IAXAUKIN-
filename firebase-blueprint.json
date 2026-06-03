@@ -1,0 +1,76 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Premium multi-user subscriber or system administrator",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique user ID (matches Auth UID)" },
+        "username": { "type": "string", "description": "Unique target trader username handle" },
+        "email": { "type": "string", "format": "email", "description": "Contact email" },
+        "role": { "type": "string", "enum": ["ADMIN", "USER"], "description": "System privilege role" },
+        "plan": { "type": "string", "enum": ["RETAIL", "PRO", "INSTITUTIONAL"], "description": "Assigned license plan tier" },
+        "status": { "type": "string", "enum": ["PENDING_APPROVAL", "ACTIVE", "EXPIRED", "INACTIVE"], "description": "Access status" },
+        "joinedAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "expiresAt": { "type": "string", "format": "date-time", "description": "Expiration timestamp" },
+        "paymentReceiptUrl": { "type": "string", "description": "Transaction HASH code or upload link" },
+        "lastAnalysisAt": { "type": "string", "format": "date-time", "description": "Last scan execution timestamp" }
+      },
+      "required": ["id", "username", "email", "role", "plan", "status", "joinedAt"]
+    },
+    "ActivationCode": {
+      "title": "ActivationCode",
+      "description": "Unique pre-paid voucher license key",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "description": "License voucher key uppercase string" },
+        "plan": { "type": "string", "enum": ["RETAIL", "PRO", "INSTITUTIONAL"], "description": "Voucher licensing plan tier" },
+        "durationDays": { "type": "integer", "description": "Day countdown limit" },
+        "isUsed": { "type": "boolean", "description": "Whether the code is consumed" },
+        "usedBy": { "type": "string", "description": "Username of consuming user" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Code creation timestamp" }
+      },
+      "required": ["code", "plan", "durationDays", "isUsed", "createdAt"]
+    },
+    "AnalysisHistory": {
+      "title": "AnalysisHistory",
+      "description": "Logged TradingView model analysis history for a subscriber",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Analysis log ID" },
+        "userId": { "type": "string", "description": "Owner trader UID" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Scan run timestamp" },
+        "imageMimeType": { "type": "string", "description": "MIME type of uploaded screenshot" },
+        "analysisText": { "type": "string", "description": "Output report text payload" }
+      },
+      "required": ["id", "userId", "createdAt", "analysisText"]
+    },
+    "UsernameDocument": {
+      "title": "UsernameDocument",
+      "description": "Unique username registration document to enforce global unique handles",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "UID of the registered owner user" }
+      },
+      "required": ["uid"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Table storing trader profile details and authorization flags"
+    },
+    "/activationCodes/{codeId}": {
+      "schema": "ActivationCode",
+      "description": "Pre-paid voucher access codes"
+    },
+    "/analysisHistory/{analysisId}": {
+      "schema": "AnalysisHistory",
+      "description": "History of visual chart evaluations"
+    },
+    "/usernames/{username}": {
+      "schema": "UsernameDocument",
+      "description": "Unique registration map to check and claim distinct trader handles"
+    }
+  }
+}

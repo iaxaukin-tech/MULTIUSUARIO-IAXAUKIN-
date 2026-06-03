@@ -1,0 +1,37 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-brand-lime: #CCFF00;
+  --color-brand-navy: #1A1A2E;
+  --color-gold: #D4AF37;
+  --color-fx-blue: #1E40AF;
+  --color-fx-sky: #60A5FA;
+  --font-serif: "Playfair Display", serif;
+}
+
+body {
+  background-color: #ffffff;
+  background-image: 
+    linear-gradient(rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.75)),
+    url("https://i.ibb.co/hx4fjpkZ/IA-XAU-KIN.png");
+  background-size: 800px;
+  background-attachment: fixed;
+  background-position: center;
+  background-repeat: repeat;
+  color: #1e293b;
+  font-family: "Inter", sans-serif;
+  position: relative;
+}
+
+/* Removed body::before background to use the more prominent circuit board background in App.tsx */
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.shadow-premium {
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.1);
+}
