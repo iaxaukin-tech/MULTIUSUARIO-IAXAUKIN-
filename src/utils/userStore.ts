@@ -268,6 +268,9 @@ export const userStore = {
   // Save generated analysis report to History & update user's lastAnalysisAt
   async recordAnalysis(userId: string, mimeType: string, reportText: string): Promise<void> {
     const dateStr = new Date().toISOString();
+    const today = new Date();
+    const localDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    
     const userDocRef = doc(db, 'users', userId);
     
     // Create random analysis log path
@@ -283,8 +286,22 @@ export const userStore = {
         analysisText: reportText
       });
 
+      // Get current user data to check daily limit cache safely
+      const userSnap = await getDoc(userDocRef);
+      let newCount = 1;
+      if (userSnap.exists()) {
+        const userData = userSnap.data();
+        if (userData.dailyUsage && userData.dailyUsage.date === localDateStr) {
+          newCount = (userData.dailyUsage.count || 0) + 1;
+        }
+      }
+
       await updateDoc(userDocRef, {
-        lastAnalysisAt: dateStr
+        lastAnalysisAt: dateStr,
+        dailyUsage: {
+          date: localDateStr,
+          count: newCount
+        }
       });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `analysisHistory/${analysisId}`);
@@ -308,6 +325,56 @@ export const userStore = {
       return results;
     } catch (err) {
       return handleFirestoreError(err, OperationType.LIST, path);
+    }
+  },
+
+  // Get count of analysis logs created today (since midnight local time with ultra-high speed cached fallback)
+  async getDailyAnalysisCount(userId: string): Promise<number> {
+    const today = new Date();
+    const localDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const startOfTodayIso = new Date(today.setHours(0, 0, 0, 0)).toISOString();
+
+    try {
+      const userDocRef = doc(db, 'users', userId);
+      const userSnap = await getDoc(userDocRef);
+      
+      if (userSnap.exists()) {
+        const userData = userSnap.data();
+        if (userData.dailyUsage && userData.dailyUsage.date === localDateStr) {
+          return userData.dailyUsage.count || 0;
+        }
+      }
+
+      // Fallback fallback: if field not present or date is stale, fetch & recount to synchronize seamlessly
+      const q = query(
+        collection(db, 'analysisHistory'),
+        where('userId', '==', userId)
+      );
+      const querySnapshot = await getDocs(q);
+      let count = 0;
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.createdAt && data.createdAt >= startOfTodayIso) {
+          count++;
+        }
+      });
+
+      // Maintain user document profile cache dynamically
+      try {
+        await updateDoc(userDocRef, {
+          dailyUsage: {
+            date: localDateStr,
+            count: count
+          }
+        });
+      } catch (cacheErr) {
+        console.warn("[IA XAU KIN Cache] Gasto fallido al persistir caches de usos:", cacheErr);
+      }
+
+      return count;
+    } catch (err) {
+      console.error("Error calculating daily analysis count:", err);
+      return 0;
     }
   },
 

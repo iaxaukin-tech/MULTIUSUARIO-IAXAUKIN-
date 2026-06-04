@@ -31,6 +31,7 @@ import { PLAN_DETAILS } from '../types';
 
 interface LoginProps {
   onLogin: (authenticatedUser: any) => void;
+  navigateTo?: (path: string) => void;
 }
 
 const TechnicalLogo = () => (
@@ -56,7 +57,7 @@ const GoogleIcon = () => (
   </svg>
 );
 
-export const Login = ({ onLogin }: LoginProps) => {
+export const Login = ({ onLogin, navigateTo }: LoginProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -426,6 +427,26 @@ export const Login = ({ onLogin }: LoginProps) => {
           </div>
           <div className="font-bold">CUPÓN: KINFREE30</div>
         </div>
+
+        {navigateTo && (
+          <div className="mt-5 pt-3 border-t border-slate-100 flex justify-center gap-4 text-[9px] text-slate-400 font-bold uppercase tracking-wider">
+            <a 
+              href="/privacy" 
+              onClick={(e) => { e.preventDefault(); navigateTo('/privacy'); }} 
+              className="hover:text-black hover:underline transition-colors"
+            >
+              Privacidad
+            </a>
+            <span className="text-slate-200">•</span>
+            <a 
+              href="/terms" 
+              onClick={(e) => { e.preventDefault(); navigateTo('/terms'); }} 
+              className="hover:text-black hover:underline transition-colors"
+            >
+              Condiciones
+            </a>
+          </div>
+        )}
       </motion.div>
     </div>
   );

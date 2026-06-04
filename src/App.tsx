@@ -29,6 +29,8 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 
 import { Login } from './components/Login';
+import { PrivacyPage } from './components/PrivacyPage';
+import { TermsPage } from './components/TermsPage';
 import { userStore } from './utils/userStore';
 import { User, ActivationCode, SubscriptionPlan, PLAN_DETAILS } from './types';
 import { auth } from './lib/firebase';
@@ -218,8 +220,25 @@ export function generateSimulatedAnalysis(): string {
 }
 
 export default function App() {
+  const [path, setPath] = useState(() => window.location.pathname);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setPath(window.location.pathname);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigateTo = (newPath: string) => {
+    window.history.pushState(null, '', newPath);
+    setPath(newPath);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
+  const [dailyAnalysisCount, setDailyAnalysisCount] = useState<number>(0);
 
   const [image, setImage] = useState<string | null>(null);
   const [mimeType, setMimeType] = useState<string>("image/png");
@@ -229,6 +248,21 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+
+  // Sync daily count when user session changes
+  useEffect(() => {
+    if (currentUser) {
+      userStore.getDailyAnalysisCount(currentUser.id)
+        .then(count => {
+          setDailyAnalysisCount(count);
+        })
+        .catch(err => {
+          console.error("Fallo al cargar análisis diarios:", err);
+        });
+    } else {
+      setDailyAnalysisCount(0);
+    }
+  }, [currentUser]);
   
   // Custom navigation state for Admins (Mesa Admin / Terminal de Análisis)
   const [viewMode, setViewMode] = useState<'TERMINAL' | 'ADMIN_BOARD'>('TERMINAL');
@@ -473,6 +507,25 @@ export default function App() {
       return;
     }
 
+    // Daily analysis count limit verification
+    if (currentUser.role !== 'ADMIN') {
+      const planLimits = {
+        RETAIL: 5,
+        PRO: 30,
+        INSTITUTIONAL: 100
+      };
+      const activeLimit = planLimits[currentUser.plan] || 5;
+      try {
+        const currentCount = await userStore.getDailyAnalysisCount(currentUser.id);
+        if (currentCount >= activeLimit) {
+          setError(`LÍMITE DIARIO EXCEDIDO: Has agotado tus ${activeLimit} análisis diarios asignados para tu plan ${currentUser.plan}. Para seguir analizando gráficos de TradingView, sube de nivel tu membresía con un nuevo código o contacta con soporte.`);
+          return;
+        }
+      } catch (checkErr) {
+        console.warn("Fallo el chequeo de límites de uso:", checkErr);
+      }
+    }
+
     setIsAnalyzing(true);
     setError(null);
 
@@ -620,6 +673,9 @@ export default function App() {
             const refreshed = await userStore.syncGoogleUser(auth.currentUser);
             setCurrentUser(refreshed);
           }
+          // Refresh direct count to reflect the completed scan instantly
+          const count = await userStore.getDailyAnalysisCount(currentUser.id);
+          setDailyAnalysisCount(count);
         } catch (dbErr) {
           console.warn("[IA XAU KIN DB] Error no crítico al guardar registro de análisis:", dbErr);
         }
@@ -655,11 +711,19 @@ export default function App() {
     }
   };
 
+  if (path === '/privacy') {
+    return <PrivacyPage navigateTo={navigateTo} />;
+  }
+
+  if (path === '/terms') {
+    return <TermsPage navigateTo={navigateTo} />;
+  }
+
   return (
     <div className="min-h-screen text-slate-900 font-sans selection:bg-brand-lime/20 relative overflow-x-hidden">
       <div className="relative z-10 min-h-screen">
         {!currentUser ? (
-          <Login onLogin={(user) => setCurrentUser(user)} />
+          <Login onLogin={(user) => setCurrentUser(user)} navigateTo={navigateTo} />
         ) : (
           <>
             {/* Header */}
@@ -1138,6 +1202,22 @@ export default function App() {
                         />
                       </div>
 
+                      {currentUser && (
+                        <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-widest text-slate-400 px-1 mb-4">
+                          <div className="flex items-center gap-1.5">
+                            <div className={`w-1.5 h-1.5 rounded-full ${dailyAnalysisCount >= (currentUser.role === 'ADMIN' ? 9999 : (currentUser.plan === 'RETAIL' ? 5 : currentUser.plan === 'PRO' ? 30 : 100)) ? 'bg-red-400 animate-pulse' : 'bg-brand-lime'}`}></div>
+                            <span>Créditos Diarios</span>
+                          </div>
+                          <span className="font-mono text-slate-500 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-100">
+                            {currentUser.role === 'ADMIN' ? (
+                              <span>{dailyAnalysisCount} / ILIMITADO</span>
+                            ) : (
+                              <span>{dailyAnalysisCount} / {currentUser.plan === 'RETAIL' ? 5 : currentUser.plan === 'PRO' ? 30 : 100} CONSULTAS</span>
+                            )}
+                          </span>
+                        </div>
+                      )}
+
                       <button
                         onClick={handleButtonClick}
                         disabled={(!image && !analysis) || isAnalyzing}
@@ -1299,6 +1379,23 @@ export default function App() {
                 <p className="text-[10px] text-slate-300 uppercase tracking-[0.5em] font-bold">
                   © 2026 IA XAU KIN • Institutional Intelligence
                 </p>
+                <div className="flex gap-4 text-[9px] text-slate-400 font-extrabold uppercase tracking-wider">
+                  <a 
+                    href="/privacy" 
+                    onClick={(e) => { e.preventDefault(); navigateTo('/privacy'); }} 
+                    className="hover:text-black hover:underline transition-colors"
+                  >
+                    Política de Privacidad
+                  </a>
+                  <span className="text-slate-200 font-normal">•</span>
+                  <a 
+                    href="/terms" 
+                    onClick={(e) => { e.preventDefault(); navigateTo('/terms'); }} 
+                    className="hover:text-black hover:underline transition-colors"
+                  >
+                    Condiciones del Servicio
+                  </a>
+                </div>
               </div>
             </footer>
 

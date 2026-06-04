@@ -12,6 +12,10 @@ export interface User {
   expiresAt?: string;
   paymentReceiptUrl?: string;
   lastAnalysisAt?: string;
+  dailyUsage?: {
+    date: string; // Formatted local date YYYY-MM-DD
+    count: number;
+  };
 }
 
 export interface ActivationCode {
