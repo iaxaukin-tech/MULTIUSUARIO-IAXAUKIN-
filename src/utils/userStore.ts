@@ -8,7 +8,8 @@ import {
   runTransaction,
   query,
   where,
-  orderBy
+  orderBy,
+  deleteField
 } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 import { User, ActivationCode, SubscriptionPlan, SubscriptionStatus } from '../types';
@@ -136,7 +137,7 @@ export const userStore = {
         expiry.setDate(expiry.getDate() + days);
         payload.expiresAt = expiry.toISOString();
       } else {
-        payload.expiresAt = undefined;
+        (payload as any).expiresAt = deleteField();
       }
 
       await updateDoc(docRef, payload);

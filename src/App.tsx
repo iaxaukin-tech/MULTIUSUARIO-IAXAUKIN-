@@ -122,11 +122,11 @@ Ejemplo:
 ---
 
 📌 Protocolo de Gestión de Capital:
-Texto profesional sobre:
-- Selección de entradas de alta convicción (máximo 2-3 ejecuciones por bloque).
-- Implementación estricta de Stop Loss.
-- Exposición por operación (0.5% - 1.0% del AUM).
-- Disciplina operativa y neutralidad emocional.
+Deberás redactar esta sección obligatoriamente con el siguiente esquema estructurado de viñetas duras de Markdown:
+* **Selección de Entradas:** Ejecutar un máximo de 2 a 3 vectores de la matriz, priorizando aquellos que coincidan con retrocesos a zonas de desequilibrio (FVG) en el gráfico de 1m.
+* **Stop Loss:** Colocación estricta a 1.5 puntos (15 pips) por debajo del mínimo estructural inmediato de la entrada.
+* **Exposición:** Límite de riesgo estricto entre 0.5% y 1.0% del AUM por operación.
+* **Disciplina:** Ejecución algorítmica fría; una vez alcanzado el target de 10 pips, asegurar parciales o mover a Breakeven. Mantener neutralidad emocional absoluta.
 
 ---
 
@@ -147,15 +147,16 @@ Tu output debe reflejar la precisión y el rigor de un terminal de trading insti
 export function generateSimulatedAnalysis(): string {
   const now = new Date();
   
-  // Format 12h AM/PM
+  // Format 12h AM/PM with padding for hours < 10
   const format12h = (date: Date) => {
     let hours = date.getHours();
     const minutes = date.getMinutes();
     const ampm = hours >= 12 ? 'PM' : 'AM';
     hours = hours % 12;
     hours = hours ? hours : 12; // the hour '0' should be '12'
+    const hoursStr = hours < 10 ? '0' + hours : hours;
     const minutesStr = minutes < 10 ? '0' + minutes : minutes;
-    return `${hours}:${minutesStr} ${ampm}`;
+    return `${hoursStr}:${minutesStr} ${ampm}`;
   };
 
   const startTimeStr = format12h(now);
@@ -166,26 +167,24 @@ export function generateSimulatedAnalysis(): string {
   const bias = biases[Math.floor(Math.random() * biases.length)];
   const biasEmoji = bias === 'LONG' ? '🟢' : '🔴';
 
-  // Generate 5-7 entries
-  const numEntries = 5 + Math.floor(Math.random() * 3); // 5, 6, 7
+  // Generate 5 entries
   const entryTimestamps: string[] = [];
   let elapsedMinutes = 3 + Math.floor(Math.random() * 5); // start 3-8 in the future
 
-  for (let i = 0; i < numEntries; i++) {
+  for (let i = 0; i < 5; i++) {
     const entryTime = new Date(now.getTime() + elapsedMinutes * 60 * 1000);
     entryTimestamps.push(format12h(entryTime));
-    elapsedMinutes += 6 + Math.floor(Math.random() * 8); // alternate intervals by 6-13 mins
-    if (elapsedMinutes >= 58) break;
+    elapsedMinutes += 7 + Math.floor(Math.random() * 5); // alternate intervals by 7-12 mins
   }
 
   const narratives = [
     {
       tesis: `El par XAUUSD muestra un fuerte desequilibrio estructural (FVG - Fair Value Gap) en la zona de descuento de la ventana actual, con una confluencia de soporte en bloque de órdenes institucional de 1 hora. Esperamos mitigación de liquidez interna antes de la expansión alcista hacia el rango premium.`,
-      advertencia: `Riesgo de volatilidad moderada lateral. Posibles "Stop Hunts" rápidos por absorción de órdenes pendientes por debajo de la zona clave antes de iniciar la expansión de tendencia.`
+      advertencia: `Zonas de alta volatilidad identificadas por debajo de 4,452.00. Existe riesgo de "Stop Hunts" (barridos de liquidez) antes de la expansión final. Invalidación de la tesis alcista si se produce un cierre de vela de 1m por debajo de 4,449.00 con volumen institucional ascendente.`
     },
     {
       tesis: `Se ha detectado un cambio de carácter (CHoCH) bajista validado por volumen en la última sesión temporal de h1. El precio mitiga el nivel de retroceso óptimo (Premium Zone) cerca del nivel de resistencia psicológica. El flujo de órdenes institucional apoya el movimiento de reversión defensiva.`,
-      advertencia: `Baja liquidez relativa en la sesión. Asegurar entradas precisas y evitar persecución del precio si el primer vector de liquidez no es mitigado estructuralmente.`
+      advertencia: `Baja liquidez relativa en la sesión. Asegurar entradas precisas y evitar persecución del precio si el primer vector de liquidez no es mitigado estructuralmente. Invalidación si se supera el máximo intradía con fuerza.`
     },
     {
       tesis: `XAUUSD se encuentra consolidando en rango de equilibrio acumulando liquidez para una expansión algorítmica inminente. El algoritmo IPDA muestra huellas de balanceo simétrico en niveles macro. Se proyecta capturas operativas rápidas en los desvíos extremos bajo estrategia de reversión a la media.`,
@@ -197,19 +196,23 @@ export function generateSimulatedAnalysis(): string {
 
   let report = `📊 XAUUSD — MATRIZ OPERATIVA INSTITUCIONAL\n\n`;
   report += `🕗 Ventana Temporal: ${startTimeStr} — ${endTimeStr}\n\n`;
-  report += `📉 Tesis de Mercado:\n${selectedNarrative.tesis}\n\n`;
-  report += `🔴 Sesgo Estratégico: ${bias} ${biasEmoji}\n\n`;
+  report += `📉 **Tesis de Mercado:**\n${selectedNarrative.tesis}\n\n`;
+  report += `🔴 **Sesgo Estratégico:** ${bias} ${biasEmoji}\n\n`;
+  report += `**Vectores de Entrada:**\n`;
 
   entryTimestamps.forEach((t) => {
-    report += `${t} — ${bias} ${biasEmoji}  \n`;
+    report += `* ${t} — ${bias} ${biasEmoji}\n`;
   });
 
-  report += `\n🎯 Target Objetivo: +10 pips (1.0 pt)\n\n`;
+  report += `\n🎯 **Target Objetivo:** +10 pips (1.0 pt)\n\n`;
   report += `---\n\n`;
-  report += `⚠️ Advertencia de Riesgo:\n${selectedNarrative.advertencia}\n\n`;
+  report += `⚠️ **Advertencia de Riesgo:**\n${selectedNarrative.advertencia}\n\n`;
   report += `---\n\n`;
-  report += `📌 Protocolo de Gestión de Capital:\n`;
-  report += `Selección rigurosa de entradas de alta convicción bajo regla de máxima paciencia técnica. Implementar siempre Stop Loss estructural invariable. Limitar exposición por operación al rango estándar establecido (0.5% - 1.0% del AUM) para salvaguardar la cuenta institucional y mantener la neutralidad emocional.`;
+  report += `📌 **Protocolo de Gestión de Capital:**\n`;
+  report += `* **Selección de Entradas:** Ejecutar un máximo de 2 a 3 vectores de la matriz, priorizando aquellos que coincidan con retrocesos a zonas de desequilibrio (FVG) en el gráfico de 1m.\n`;
+  report += `* **Stop Loss:** Colocación estricta a 1.5 puntos (15 pips) por debajo del mínimo estructural inmediato de la entrada.\n`;
+  report += `* **Exposición:** Límite de riesgo estricto entre 0.5% y 1.0% del AUM por operación.\n`;
+  report += `* **Disciplina:** Ejecución algorítmica fría; una vez alcanzado el target de 10 pips, asegurar parciales o mover a Breakeven. Mantener neutralidad emocional absoluta.`;
 
   return report;
 }
@@ -478,13 +481,16 @@ export default function App() {
       let useClientFallback = false;
       let text = "";
 
+      // Only allow ADMIN to override with manual API key stored in browser (prevents test/trial users from leaking/inheriting cached storage keys on the same domain)
+      const activeGeminiKey = currentUser.role === 'ADMIN' ? customApiKey.trim() : '';
+
       try {
         console.log("[IA XAU KIN] Intentando análisis por servidor backend...");
         const response = await fetch('/api/analyze', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-gemini-key': customApiKey || ''
+            'x-gemini-key': activeGeminiKey
           },
           body: JSON.stringify({
             mimeType,
@@ -540,7 +546,7 @@ export default function App() {
       }
 
       if (useClientFallback) {
-        const finalKey = customApiKey.trim();
+        const finalKey = activeGeminiKey;
         if (!finalKey) {
           if (currentUser.role !== 'ADMIN') {
             console.log("[IA XAU KIN Client] Iniciando motor redundante de simulación cuantitativa...");
