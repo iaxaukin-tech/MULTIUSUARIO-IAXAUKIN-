@@ -55,7 +55,7 @@ export const PLAN_DETAILS: Record<SubscriptionPlan, MarketPlanDetails> = {
     name: 'Socio Pro',
     price: '$79 / Mes',
     features: [
-      'Análisis ilimitados',
+      '30 Análisis diarios de gráficos con IA',
       'Prioridad de procesamiento (Bajo tiempo de espera)',
       'Identificación avanzada de BOS/CHoCH',
       'Soporte directo vía VIP Telegram',
@@ -69,7 +69,7 @@ export const PLAN_DETAILS: Record<SubscriptionPlan, MarketPlanDetails> = {
     name: 'Socio Institucional',
     price: '$199 / Mes',
     features: [
-      'Análisis ilimitados con modelo de alta precisión',
+      '100 Análisis diarios de gráficos con IA (Alta Precisión)',
       'Reporte de Liquidez Avanzada (Order Blocks & FVG)',
       'Asesoría 1-a-1 semanal con analista senior',
       'Webhooks en tiempo real para TradingView'

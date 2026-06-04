@@ -14,7 +14,16 @@
         "joinedAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
         "expiresAt": { "type": "string", "format": "date-time", "description": "Expiration timestamp" },
         "paymentReceiptUrl": { "type": "string", "description": "Transaction HASH code or upload link" },
-        "lastAnalysisAt": { "type": "string", "format": "date-time", "description": "Last scan execution timestamp" }
+        "lastAnalysisAt": { "type": "string", "format": "date-time", "description": "Last scan execution timestamp" },
+        "dailyUsage": {
+          "type": "object",
+          "properties": {
+            "date": { "type": "string", "description": "Formatted local date YYYY-MM-DD" },
+            "count": { "type": "integer", "description": "Number of scans run on this date" }
+          },
+          "required": ["date", "count"],
+          "description": "Daily usage limit status details"
+        }
       },
       "required": ["id", "username", "email", "role", "plan", "status", "joinedAt"]
     },

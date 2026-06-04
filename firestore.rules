@@ -50,7 +50,13 @@ service cloud.firestore {
           && data.role in ['ADMIN', 'USER']
           && data.plan in ['RETAIL', 'PRO', 'INSTITUTIONAL']
           && data.status in ['PENDING_APPROVAL', 'ACTIVE', 'EXPIRED', 'INACTIVE']
-          && data.joinedAt is string;
+          && data.joinedAt is string
+          && (
+            !('dailyUsage' in data) || (
+              data.dailyUsage.date is string
+              && data.dailyUsage.count is int
+            )
+          );
       }
 
       allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
@@ -81,11 +87,17 @@ service cloud.firestore {
               && incoming().paymentReceiptUrl is string
               && incoming().paymentReceiptUrl.size() <= 256
             ) ||
-            // Action 2: Update analysis timestamp (only status must match active)
+            // Action 2: Update analysis timestamp and daily usage count (only status must match active)
             (
               existing().status == 'ACTIVE'
-              && incoming().diff(existing()).affectedKeys().hasOnly(['lastAnalysisAt']) 
-              && incoming().lastAnalysisAt is string
+              && incoming().diff(existing()).affectedKeys().hasOnly(['lastAnalysisAt', 'dailyUsage']) 
+              && (incoming().lastAnalysisAt is string || !('lastAnalysisAt' in incoming()))
+              && (
+                !('dailyUsage' in incoming()) || (
+                  incoming().dailyUsage.date is string
+                  && incoming().dailyUsage.count is int
+                )
+              )
             )
           )
         )
