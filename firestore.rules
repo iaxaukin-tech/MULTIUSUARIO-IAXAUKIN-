@@ -56,6 +56,15 @@ service cloud.firestore {
               data.dailyUsage.date is string
               && data.dailyUsage.count is int
             )
+          )
+          && (
+            !('expiresAt' in data) || data.expiresAt is string
+          )
+          && (
+            !('paymentReceiptUrl' in data) || (data.paymentReceiptUrl is string && data.paymentReceiptUrl.size() <= 256)
+          )
+          && (
+            !('lastAnalysisAt' in data) || data.lastAnalysisAt is string
           );
       }
 
@@ -69,7 +78,7 @@ service cloud.firestore {
         && isValidUser(incoming())
         // Restrict role and status self-elevation on initial creation except for verified institutional owner
         && (
-          (('email' in request.auth.token && request.auth.token.email.lower() == 'iaxaukin@gmail.com') && incoming().role == 'ADMIN' && incoming().status == 'ACTIVE')
+          (request.auth.token.email == 'iaxaukin@gmail.com' && incoming().role == 'ADMIN' && incoming().status == 'ACTIVE')
           || (incoming().role == 'USER' && incoming().status in ['INACTIVE', 'PENDING_APPROVAL'])
         );
 
@@ -78,26 +87,34 @@ service cloud.firestore {
         isAdmin() || (
           // Standard User update path
           request.auth.uid == userId 
+          && isValidUser(incoming())
           && incoming().role == existing().role // Role is immutable
+          && incoming().id == existing().id // ID is immutable
+          && incoming().username == existing().username // Username is immutable
+          && incoming().joinedAt == existing().joinedAt // joinedAt is immutable
           && (
             // Action 1: Upload transaction hash for manual approval
             (
               incoming().diff(existing()).affectedKeys().hasOnly(['paymentReceiptUrl', 'status', 'plan']) 
               && incoming().status == 'PENDING_APPROVAL'
-              && incoming().paymentReceiptUrl is string
-              && incoming().paymentReceiptUrl.size() <= 256
             ) ||
-            // Action 2: Update analysis timestamp and daily usage count (only status must match active)
+            // Action 2: Activate with Code / Coupon
             (
-              existing().status == 'ACTIVE'
-              && incoming().diff(existing()).affectedKeys().hasOnly(['lastAnalysisAt', 'dailyUsage']) 
-              && (incoming().lastAnalysisAt is string || !('lastAnalysisAt' in incoming()))
-              && (
-                !('dailyUsage' in incoming()) || (
-                  incoming().dailyUsage.date is string
-                  && incoming().dailyUsage.count is int
-                )
-              )
+              incoming().diff(existing()).affectedKeys().hasOnly(['status', 'plan', 'expiresAt'])
+              && incoming().status == 'ACTIVE'
+            ) ||
+            // Action 3: Record analysis or update dailyUsage count
+            (
+              incoming().diff(existing()).affectedKeys().hasAny(['lastAnalysisAt', 'dailyUsage'])
+              && incoming().diff(existing()).affectedKeys().hasOnly(['lastAnalysisAt', 'dailyUsage'])
+            ) ||
+            // Action 4: Sync email on login (some verified email flows)
+            (
+              incoming().diff(existing()).affectedKeys().hasOnly(['email'])
+            ) ||
+            // Action 5: Reset/initialize dailyUsage cache
+            (
+              incoming().diff(existing()).affectedKeys().hasOnly(['dailyUsage'])
             )
           )
         )

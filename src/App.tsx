@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
   Upload, 
   TrendingUp, 
@@ -24,7 +24,10 @@ import {
   Compass,
   CheckCircle2,
   Coins,
-  AlertCircle
+  AlertCircle,
+  CreditCard,
+  Wallet,
+  QrCode
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -219,6 +222,41 @@ export function generateSimulatedAnalysis(): string {
   return report;
 }
 
+const compressImage = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 600;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > MAX_WIDTH) {
+          height = Math.round((height * MAX_WIDTH) / width);
+          width = MAX_WIDTH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(event.target?.result as string);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.65);
+        resolve(compressedBase64);
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+};
+
 export default function App() {
   const [path, setPath] = useState(() => window.location.pathname);
 
@@ -238,7 +276,6 @@ export default function App() {
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
-  const [dailyAnalysisCount, setDailyAnalysisCount] = useState<number>(0);
 
   const [image, setImage] = useState<string | null>(null);
   const [mimeType, setMimeType] = useState<string>("image/png");
@@ -249,19 +286,15 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
-  // Sync daily count when user session changes
-  useEffect(() => {
-    if (currentUser) {
-      userStore.getDailyAnalysisCount(currentUser.id)
-        .then(count => {
-          setDailyAnalysisCount(count);
-        })
-        .catch(err => {
-          console.error("Fallo al cargar análisis diarios:", err);
-        });
-    } else {
-      setDailyAnalysisCount(0);
+  // Derive daily usage count dynamically from currentUser to avoid any race condition or state lag
+  const dailyAnalysisCount = useMemo(() => {
+    if (!currentUser) return 0;
+    const today = new Date();
+    const localDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    if (currentUser.dailyUsage && currentUser.dailyUsage.date === localDateStr) {
+      return currentUser.dailyUsage.count || 0;
     }
+    return 0;
   }, [currentUser]);
   
   // Custom navigation state for Admins (Mesa Admin / Terminal de Análisis)
@@ -271,6 +304,82 @@ export default function App() {
   const [activationCode, setActivationCode] = useState('');
   const [activationError, setActivationError] = useState<string | null>(null);
   const [activationSuccess, setActivationSuccess] = useState<string | null>(null);
+
+  // Checkout Modal State hooks
+  const [checkoutPlan, setCheckoutPlan] = useState<SubscriptionPlan | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<'USDT' | 'BTC' | 'SOL' | 'BINANCE' | 'FIAT_COP_PSE'>('USDT');
+  const [paymentTxHash, setPaymentTxHash] = useState('');
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+  const [paymentSuccess, setPaymentSuccess] = useState<string | null>(null);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [addressCopied, setAddressCopied] = useState(false);
+  const [copiedText, setCopiedText] = useState('');
+  const [webhookUrl, setWebhookUrl] = useState('');
+
+  // Lightbox and file loading states for payment screenshots
+  const [adminLightboxImage, setAdminLightboxImage] = useState<string | null>(null);
+  const [receiptFileLoading, setReceiptFileLoading] = useState(false);
+
+  const handleReceiptFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setPaymentError("Por favor selecciona un formato de imagen compatible (PNG, JPG, JPEG).");
+      return;
+    }
+
+    setReceiptFileLoading(true);
+    setPaymentError(null);
+    try {
+      const compressedBase64 = await compressImage(file);
+      setPaymentTxHash(compressedBase64);
+    } catch (err) {
+      console.error("Error compressing receipt image:", err);
+      setPaymentError("No se pudo procesar la imagen del comprobante.");
+    } finally {
+      setReceiptFileLoading(false);
+    }
+  };
+
+  const handleRegisterPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser || !checkoutPlan) return;
+    if (!paymentTxHash.trim()) {
+      setPaymentError('Por favor sube una captura del comprobante o ingresa el Hash o ID de transacción.');
+      return;
+    }
+
+    setIsSubmittingPayment(true);
+    setPaymentError(null);
+    setPaymentSuccess(null);
+
+    try {
+      const updatedUser = await userStore.submitPaymentReceipt(
+        currentUser.id,
+        checkoutPlan,
+        paymentTxHash.trim()
+      );
+      
+      setCurrentUser(updatedUser);
+      setPaymentSuccess(`¡Pago registrado con éxito para el Plan ${checkoutPlan}! Esperando verificación de administración.`);
+      
+      // Simulate real Telegram/Discord/Slack webhook community dispatch
+      console.log(`[Webhook Auto-Dispatch] Notification successfully sent to telegram canal using handle: ${webhookUrl || 'Default Administration channel'}`);
+      
+      // Reset after success
+      setTimeout(() => {
+        setCheckoutPlan(null);
+        setPaymentTxHash('');
+        setPaymentSuccess(null);
+      }, 5000);
+    } catch (err: any) {
+      console.error('Error submitting payment:', err);
+      setPaymentError(err.message || 'Error al registrar el pago. Por favor intente de nuevo.');
+    } finally {
+      setIsSubmittingPayment(false);
+    }
+  };
 
   // Admin View state references
   const [allUsers, setAllUsers] = useState<User[]>([]);
@@ -668,14 +777,11 @@ export default function App() {
         // Record timestamp asynchronously in Firestore
         try {
           await userStore.recordAnalysis(currentUser.id, mimeType, text);
-          // Refresh session record locally from DB
+          // Refresh session record locally from DB to update state and trigger memoized counts dynamically
           if (auth.currentUser) {
             const refreshed = await userStore.syncGoogleUser(auth.currentUser);
             setCurrentUser(refreshed);
           }
-          // Refresh direct count to reflect the completed scan instantly
-          const count = await userStore.getDailyAnalysisCount(currentUser.id);
-          setDailyAnalysisCount(count);
         } catch (dbErr) {
           console.warn("[IA XAU KIN DB] Error no crítico al guardar registro de análisis:", dbErr);
         }
@@ -728,62 +834,63 @@ export default function App() {
           <>
             {/* Header */}
             <header className="border-b border-slate-200 bg-white/80 backdrop-blur-md sticky top-0 z-50">
-              <div className="max-w-7xl mx-auto px-6 h-32 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <Logo className="h-32 w-auto" />
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 sm:h-24 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Logo className="h-10 sm:h-16 md:h-20 w-auto" />
                 </div>
                 
-                {/* Desktop Menu */}
-                <div className="flex items-center gap-6 text-xs font-bold uppercase tracking-widest text-slate-500">
+                {/* Desktop & Mobile Menu */}
+                <div className="flex items-center gap-3 sm:gap-5 md:gap-6 text-[10px] sm:text-xs font-bold uppercase tracking-widest text-slate-500">
                   <button 
                     onClick={() => setViewMode('TERMINAL')}
-                    className={`flex items-center gap-2 transition-colors cursor-pointer group ${viewMode === 'TERMINAL' ? 'text-black font-black' : 'hover:text-slate-900'}`}
+                    className={`flex items-center gap-1.5 transition-colors cursor-pointer group ${viewMode === 'TERMINAL' ? 'text-black font-black' : 'hover:text-slate-900'}`}
                   >
-                    <TrendingUp size={14} className={viewMode === 'TERMINAL' ? 'text-brand-lime' : 'group-hover:text-brand-lime'} />
-                    Terminal de Análisis
+                    <TrendingUp size={13} className={viewMode === 'TERMINAL' ? 'text-brand-lime' : 'group-hover:text-brand-lime'} />
+                    <span className="hidden xs:inline sm:inline">Terminal</span>
                   </button>
 
                   {currentUser.role === 'ADMIN' && (
                     <button 
                       onClick={() => setViewMode('ADMIN_BOARD')}
-                      className={`flex items-center gap-2 transition-colors cursor-pointer group ${viewMode === 'ADMIN_BOARD' ? 'text-black font-black' : 'hover:text-slate-900'}`}
+                      className={`flex items-center gap-1.5 transition-colors cursor-pointer group ${viewMode === 'ADMIN_BOARD' ? 'text-black font-black' : 'hover:text-slate-900'}`}
                     >
-                      <Users size={14} className={viewMode === 'ADMIN_BOARD' ? 'text-brand-lime' : 'group-hover:text-brand-lime'} />
-                      Mesa de Control (Admin)
+                      <Users size={13} className={viewMode === 'ADMIN_BOARD' ? 'text-brand-lime' : 'group-hover:text-brand-lime'} />
+                      <span className="hidden xs:inline sm:inline">Control</span>
                     </button>
                   )}
 
                   {currentUser.role === 'ADMIN' && (
                     <>
-                      <div className="h-4 w-[1px] bg-slate-200" />
+                      <div className="h-3 w-[1px] bg-slate-200 hidden sm:block" />
                       {/* API Key settings for shared/production manual entry */}
                       <button
                         onClick={() => setShowKeyConfig(true)}
                         className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-black transition-colors cursor-pointer group uppercase tracking-wider font-extrabold"
                         title="Configurar Clave API de Gemini"
                       >
-                        <Settings size={14} className="group-hover:rotate-45 transition-transform duration-300 text-brand-lime" />
-                        <span className="hidden sm:inline">Clave API</span>
+                        <Settings size={13} className="group-hover:rotate-45 transition-transform duration-300 text-brand-lime" />
+                        <span className="hidden md:inline">Clave API</span>
                       </button>
                     </>
                   )}
 
-                  <div className="h-4 w-[1px] bg-slate-200" />
+                  <div className="h-3.5 w-[1px] bg-slate-200" />
 
                   {/* Logged profile banner */}
-                  <div className="hidden lg:flex flex-col items-end leading-none">
-                    <span className="text-[10px] text-slate-800 font-mono font-bold lowercase">@{currentUser.username}</span>
-                    <span className="text-[8px] text-slate-400 font-bold uppercase tracking-widest mt-1">
-                      {currentUser.role === 'ADMIN' ? 'MESA ADMINISTRADOR' : `SOCIO: ${currentUser.plan}`}
+                  <div className="hidden sm:flex flex-col items-end leading-none">
+                    <span className="text-[9px] text-slate-800 font-mono font-bold lowercase">@{currentUser.username}</span>
+                    <span className="text-[7.5px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+                      {currentUser.role === 'ADMIN' ? 'ADMIN' : `SOCIO: ${currentUser.plan}`}
                     </span>
                   </div>
 
                   <button 
                     onClick={handleLogout}
-                    className="flex items-center gap-2 text-red-500 hover:text-red-700 transition-colors cursor-pointer group"
+                    className="flex items-center gap-1 text-red-500 hover:text-red-700 transition-colors cursor-pointer group"
                     id="btn-logout"
                   >
-                    <LogOut size={14} /> Salir
+                    <LogOut size={13} />
+                    <span className="hidden xs:inline">Salir</span>
                   </button>
                 </div>
               </div>
@@ -882,9 +989,27 @@ export default function App() {
                                 </td>
                                 <td className="py-4 font-mono text-[9.5px]">
                                   {user.paymentReceiptUrl ? (
-                                    <span className="text-brand-lime bg-slate-950 px-2 py-1 rounded-[6px] font-bold block max-w-[124px] truncate cursor-pointer hover:bg-slate-900 border border-brand-lime/20 text-center text-[8.5px]" title={user.paymentReceiptUrl}>
-                                      HASH: {user.paymentReceiptUrl.substring(0, 10)}...
-                                    </span>
+                                    user.paymentReceiptUrl.startsWith('data:image') ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => setAdminLightboxImage(user.paymentReceiptUrl!)}
+                                        className="text-white bg-slate-900 border border-slate-800 hover:bg-slate-800 px-2 py-1.5 rounded-[6px] font-extrabold block w-full max-w-[124px] cursor-pointer text-center text-[8px] font-sans uppercase transition-colors"
+                                      >
+                                        📷 Ver Captura
+                                      </button>
+                                    ) : (
+                                      <span 
+                                        className="text-brand-lime bg-slate-950 px-2 py-1.5 rounded-[6px] font-bold block max-w-[124px] truncate cursor-pointer hover:bg-slate-900 border border-brand-lime/20 text-center text-[8.5px]" 
+                                        title={user.paymentReceiptUrl}
+                                        onClick={() => {
+                                          if (user.paymentReceiptUrl) {
+                                            navigator.clipboard.writeText(user.paymentReceiptUrl);
+                                          }
+                                        }}
+                                      >
+                                        HASH: {user.paymentReceiptUrl.substring(0, 10)}...
+                                      </span>
+                                    )
                                   ) : (
                                     <span className="text-slate-300 italic">—</span>
                                   )}
@@ -1014,10 +1139,21 @@ export default function App() {
                         <p className="text-slate-500 text-sm leading-relaxed">
                           Estimado <b className="text-slate-700">@{currentUser.username}</b>, tu solicitud de membresía para el plan <b className="text-slate-800">{currentUser.plan}</b> está siendo verificada manualmente por nuestra administración financiera.
                         </p>
-                        <div className="bg-slate-50 p-4.5 rounded-2xl text-left text-[10px] space-y-2 border border-slate-100/80 max-w-sm mx-auto font-mono text-slate-500">
+                        <div className="bg-slate-50 p-4.5 rounded-2xl text-left text-[10px] space-y-2.5 border border-slate-100/80 max-w-sm mx-auto font-mono text-slate-500">
                           <span className="font-bold text-slate-800 uppercase block tracking-wider font-sans">Comprobante Registrado:</span>
-                          <span className="break-all whitespace-pre-wrap block text-slate-600">{currentUser.paymentReceiptUrl}</span>
-                          <span className="text-[8px] text-slate-400 block font-sans uppercase tracking-[0.05em] pt-2 border-t border-slate-100">La activación es manual y demora entre 10 minutos y 2 horas.</span>
+                          {currentUser.paymentReceiptUrl?.startsWith('data:image') ? (
+                            <div className="space-y-1.5">
+                              <img 
+                                src={currentUser.paymentReceiptUrl} 
+                                alt="Comprobante de pago" 
+                                className="w-full max-h-40 object-contain rounded-xl border border-slate-200/70 bg-white p-1 shadow-sm" 
+                              />
+                              <span className="text-[8px] text-slate-400 block font-sans text-center">Captura de pantalla cargada por el usuario</span>
+                            </div>
+                          ) : (
+                            <span className="break-all whitespace-pre-wrap block text-slate-600">{currentUser.paymentReceiptUrl}</span>
+                          )}
+                          <span className="text-[8px] text-slate-400 block font-sans uppercase tracking-[0.05em] pt-2 border-t border-slate-100/80">La activación es manual y demora entre 10 minutos y 2 horas.</span>
                         </div>
                       </>
                     ) : (
@@ -1037,34 +1173,41 @@ export default function App() {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
                       {(['RETAIL', 'PRO', 'INSTITUTIONAL'] as SubscriptionPlan[]).map((pKey) => {
                         const plan = PLAN_DETAILS[pKey];
+                        const isInst = pKey === 'INSTITUTIONAL';
                         return (
-                          <div key={pKey} className="glass-card rounded-[2rem] p-7 text-left border border-slate-100 flex flex-col justify-between">
+                          <div key={pKey} className={`glass-card rounded-[2rem] p-7 text-left flex flex-col justify-between transition-all duration-300
+                            ${isInst ? 'border border-brand-lime/30 bg-slate-950 text-white hover:border-brand-lime/50' : 'border border-slate-100 bg-white text-slate-900'}`}>
                             <div className="space-y-4">
-                              <span className={`px-3 py-1 text-[8px] font-extrabold uppercase rounded-lg tracking-wider bg-slate-50 border border-slate-100`}>
+                              <span className={`px-3 py-1 text-[8px] font-extrabold uppercase rounded-lg tracking-wider border
+                                ${isInst ? 'bg-brand-lime/10 border-brand-lime/20 text-brand-lime' : 'bg-slate-50 border-slate-100 text-slate-800'}`}>
                                 Plan {plan.name.split(' ')[1]}
                               </span>
                               <div className="space-y-1">
-                                <h5 className="text-3xl font-serif italic font-bold text-slate-900">{plan.price}</h5>
-                                <p className="text-[9px] uppercase tracking-widest text-slate-400 font-bold">acceso mensual</p>
+                                <h5 className={`text-3xl font-serif italic font-bold ${isInst ? 'text-white' : 'text-slate-900'}`}>{plan.price}</h5>
+                                <p className={`text-[9px] uppercase tracking-widest font-bold text-slate-400`}>
+                                  {isInst ? 'condiciones a convenir' : 'acceso mensual'}
+                                </p>
                               </div>
-                              <ul className="space-y-2.5 text-[10px] text-slate-500 pt-3 border-t border-slate-50">
+                              <ul className="space-y-2.5 text-[10px] pt-3 border-t border-slate-100/10">
                                 {plan.features.map((feat, idx) => (
                                   <li key={idx} className="flex gap-2">
-                                    <Check className="text-brand-lime w-3.5 h-3.5 mt-0.5 shrink-0" />
-                                    <span>{feat}</span>
+                                    <Check className={`w-3.5 h-3.5 mt-0.5 shrink-0 text-brand-lime`} />
+                                    <span className={isInst ? 'text-slate-300' : 'text-slate-500'}>{feat}</span>
                                   </li>
                                 ))}
                               </ul>
                             </div>
 
-                            <a 
-                              href="https://t.me/iaxaukin_suport" // Simulated telegram support group
-                              target="_blank"
-                              rel="noreferrer"
-                              className="w-full text-center py-3 bg-slate-950 font-bold uppercase tracking-wider text-[9px] rounded-xl text-white mt-8 hover:bg-slate-800 transition"
+                            <button 
+                              onClick={() => setCheckoutPlan(pKey)}
+                              className={`w-full text-center py-3 font-bold uppercase tracking-wider text-[9px] rounded-xl mt-8 cursor-pointer transition-all duration-300 ${
+                                isInst 
+                                  ? 'bg-brand-lime text-slate-950 hover:bg-white hover:text-black shadow-lg shadow-brand-lime/10' 
+                                  : 'bg-slate-950 text-white hover:bg-slate-800'
+                              }`}
                             >
-                              Solicitar con Administración
-                            </a>
+                              {isInst ? 'Contactar Gerencia' : 'Solicitar con Administración'}
+                            </button>
                           </div>
                         );
                       })}
@@ -1116,6 +1259,448 @@ export default function App() {
                       </div>
                     </div>
                   )}
+
+                  {/* Checkout Modal Overlay */}
+                  <AnimatePresence>
+                    {checkoutPlan && (
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/70 backdrop-blur-md p-4"
+                      >
+                        <motion.div
+                          initial={{ scale: 0.95, y: 15 }}
+                          animate={{ scale: 1, y: 0 }}
+                          exit={{ scale: 0.95, y: 15 }}
+                          className="bg-white border border-slate-100 max-w-lg w-full rounded-[2.5rem] p-6 sm:p-8 shadow-2xl relative space-y-6 text-left"
+                        >
+                          {/* Close Button */}
+                          <button
+                            onClick={() => {
+                              setCheckoutPlan(null);
+                              setPaymentTxHash('');
+                              setPaymentError(null);
+                            }}
+                            className="absolute right-6 top-6 text-slate-400 hover:text-slate-700 font-bold p-1 cursor-pointer"
+                          >
+                            ✕
+                          </button>
+
+                          <div className="space-y-1">
+                            <span className={`text-[8px] font-extrabold uppercase px-2.5 py-1 rounded-md border tracking-widest block w-fit ${
+                              checkoutPlan === 'INSTITUTIONAL' 
+                                ? 'bg-amber-400/10 border-amber-400/20 text-amber-600'
+                                : 'bg-brand-lime/10 border-brand-lime/20 text-brand-navy'
+                            }`}>
+                              Mesa de Recaudo Directo XAU KIN
+                            </span>
+                            <h3 className="text-2xl font-serif italic text-slate-900 font-bold">
+                              Checkout {PLAN_DETAILS[checkoutPlan].name}
+                            </h3>
+                            <p className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">
+                              Valor mensual: <b className="text-slate-800">{PLAN_DETAILS[checkoutPlan].price}</b>
+                            </p>
+                          </div>
+
+                          {checkoutPlan === 'INSTITUTIONAL' ? (
+                            // Institutional Plan View
+                            <div className="space-y-4">
+                              <p className="text-slate-600 text-xs leading-relaxed">
+                                Nuestra solución institucional incluye soporte con <b>Webhooks de Automatización</b> para retransmitir análisis cuantitativos de la IA en tiempo real directamente a tus comunidades de Telegram o Discord.
+                              </p>
+                              
+                              <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-3">
+                                <label className="block text-[9.5px] uppercase tracking-wider text-slate-400 font-black font-mono">
+                                  ¿A dónde deseas dirigir tu Webhook de Comunidad?
+                                </label>
+                                <input
+                                  type="text"
+                                  value={webhookUrl}
+                                  onChange={(e) => setWebhookUrl(e.target.value)}
+                                  placeholder="Canal de Telegram (ej: @miComunidadVIP) o Webhook URL"
+                                  className="w-full bg-white border border-slate-200 rounded-xl py-3 px-3.5 text-xs text-slate-800 focus:outline-none focus:border-slate-400 font-mono"
+                                />
+                                <span className="text-[8.5px] text-slate-400 leading-normal block uppercase font-mono font-bold tracking-tight">
+                                  • LA IA XAU KIN PUBLICARÁ LOS ESCANEOS Y VECTORES DE ENTRADA CON FORMATO EN TU COMUNIDAD.
+                                </span>
+                              </div>
+
+                              <div className="flex flex-col gap-2 pt-2">
+                                <a
+                                  href={`mailto:gerencia@iaxaukin.com?subject=Solicitud%20Plan%20Institucional%20IA%20XAU%20KIN&body=Hola%20Gerencia,%20mi%20operador%20es%20@${currentUser?.username}%20y%20deseo%20activar%20el%20Plan%20Institucional%20con%20soporte%20de%20webhook%20para%20${encodeURIComponent(webhookUrl || 'mi canal')}.`}
+                                  className="w-full text-center py-4 bg-slate-950 font-bold uppercase tracking-wider text-[10px] rounded-xl text-white hover:bg-slate-850 transition shadow-lg shadow-black/10 flex items-center justify-center gap-1.5"
+                                >
+                                  Solicitar mediante Email a Gerencia
+                                </a>
+                                
+                                <a
+                                  href="https://t.me/gerencia_iaxaukin"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="w-full text-center py-4 bg-brand-lime text-slate-950 font-bold uppercase tracking-wider text-[10px] rounded-xl hover:bg-slate-950 hover:text-brand-lime transition-all duration-300 shadow-md flex items-center justify-center gap-1.5"
+                                >
+                                  Contactar por Telegram Administrativo
+                                </a>
+                              </div>
+                            </div>
+                          ) : (
+                            // Retail & Pro Checkout View
+                            <form onSubmit={handleRegisterPayment} className="space-y-4">
+                              {/* Horizontal Payment Method Tabs */}
+                              <div className="flex gap-1.5 border-b border-slate-100 pb-2">
+                                {[
+                                  { id: 'USDT', label: 'USDT (TRC10/20)', icon: Coins },
+                                  { id: 'BINANCE', label: 'Binance Pay', icon: QrCode }
+                                ].map((tab) => {
+                                  const IconComponent = tab.icon;
+                                  const isActive = paymentMethod === tab.id;
+                                  return (
+                                    <button
+                                      key={tab.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setPaymentMethod(tab.id as any);
+                                        setPaymentError(null);
+                                      }}
+                                      className={`flex items-center gap-1.5 px-4 py-2 text-[10px] uppercase tracking-wider font-extrabold rounded-lg cursor-pointer transition ${
+                                        isActive 
+                                          ? 'bg-slate-900 border border-slate-800 text-brand-lime' 
+                                          : 'bg-slate-50 border border-slate-100 text-slate-500 hover:bg-slate-100'
+                                      }`}
+                                    >
+                                      <IconComponent size={12} className={isActive ? 'text-brand-lime' : 'text-slate-400'} />
+                                      {tab.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Dynamic Payment Method Instruction Box */}
+                              <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-4">
+                                {paymentMethod === 'USDT' && (
+                                  <div className="space-y-4 animate-[fadeIn_0.2s_ease-out]">
+                                    <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-widest text-[#22C55E] font-mono">
+                                      <span>Red de Pago USDT</span>
+                                      <span className="text-emerald-700 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded text-[8.5px]">TRC20 (Red TRON)</span>
+                                    </div>
+
+                                    <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-3 rounded-xl border border-slate-100">
+                                      {/* Stylized Simulated QR Code */}
+                                      <div className="flex flex-col items-center space-y-1.5 shrink-0 bg-slate-50 p-2.5 rounded-lg border border-slate-100 shadow-inner">
+                                        <div className="w-[100px] h-[100px] relative bg-white border border-slate-200/60 p-1.5 flex items-center justify-center rounded">
+                                          {/* Scan Corner Markers */}
+                                          <div className="absolute top-1 left-1 w-3.5 h-3.5 border-t-2 border-l-2 border-brand-navy"></div>
+                                          <div className="absolute top-1 right-1 w-3.5 h-3.5 border-t-2 border-r-2 border-brand-navy"></div>
+                                          <div className="absolute bottom-1 left-1 w-3.5 h-3.5 border-b-2 border-l-2 border-brand-navy"></div>
+                                          <div className="absolute bottom-1 right-1 w-3.5 h-3.5 border-b-2 border-r-2 border-brand-navy"></div>
+                                          
+                                          {/* Abstract elegant QR matrix pattern using inline SVG */}
+                                          <svg viewBox="0 0 100 100" className="w-full h-full text-slate-800" fill="currentColor">
+                                            {/* Squares for QR position */}
+                                            <rect x="5" y="5" width="25" height="25" fill="none" stroke="currentColor" strokeWidth="5"></rect>
+                                            <rect x="11" y="11" width="13" height="13"></rect>
+                                            <rect x="70" y="5" width="25" height="25" fill="none" stroke="currentColor" strokeWidth="5"></rect>
+                                            <rect x="76" y="11" width="13" height="13"></rect>
+                                            <rect x="5" y="70" width="25" height="25" fill="none" stroke="currentColor" strokeWidth="5"></rect>
+                                            <rect x="11" y="76" width="13" height="13"></rect>
+                                            {/* Center icon or custom pattern */}
+                                            <circle cx="50" cy="50" r="9" className="text-brand-lime" fill="currentColor"></circle>
+                                            <path d="M 47,50 L 53,50 M 50,47 L 50,53" stroke="black" strokeWidth="2.5"></path>
+                                            {/* Scattered mock pixel data */}
+                                            <rect x="40" y="10" width="6" height="6"></rect>
+                                            <rect x="50" y="5" width="6" height="12"></rect>
+                                            <rect x="60" y="15" width="6" height="6"></rect>
+                                            <rect x="40" y="30" width="12" height="6"></rect>
+                                            <rect x="35" y="40" width="6" height="6"></rect>
+                                            <rect x="60" y="35" width="6" height="12"></rect>
+                                            <rect x="10" y="45" width="6" height="6"></rect>
+                                            <rect x="25" y="50" width="6" height="6"></rect>
+                                            <rect x="15" y="60" width="12" height="6"></rect>
+                                            <rect x="45" y="65" width="6" height="6"></rect>
+                                            <rect x="55" y="70" width="6" height="12"></rect>
+                                            <rect x="40" y="80" width="12" height="6"></rect>
+                                            <rect x="75" y="45" width="12" height="6"></rect>
+                                            <rect x="85" y="55" width="6" height="12"></rect>
+                                            <rect x="70" y="80" width="6" height="10"></rect>
+                                            <rect x="85" y="75" width="10" height="6"></rect>
+                                          </svg>
+                                        </div>
+                                        <span className="text-[7.5px] uppercase tracking-widest text-slate-400 font-bold font-mono">Escanea QR</span>
+                                      </div>
+
+                                      <div className="space-y-2.5 w-full">
+                                        <div className="space-y-1">
+                                          <span className="block text-[8px] uppercase tracking-wider text-slate-400 font-extrabold font-mono">Dirección USDT (TRC20):</span>
+                                          <div className="flex items-center gap-1.5">
+                                            <input
+                                              type="text"
+                                              readOnly
+                                              value="TYXauKinGoldTradersTRC20OfficialX888"
+                                              className="w-full bg-slate-50 border border-slate-100 rounded-lg py-2 px-3 text-[10px] font-mono text-slate-800 select-all focus:outline-none"
+                                            />
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                navigator.clipboard.writeText("TYXauKinGoldTradersTRC20OfficialX888");
+                                                setCopiedText("USDT");
+                                                setTimeout(() => setCopiedText(""), 2000);
+                                              }}
+                                              className={`px-3 py-2 rounded-lg text-[9px] uppercase tracking-wider font-extrabold cursor-pointer transition shrink-0 ${
+                                                copiedText === "USDT" 
+                                                  ? 'bg-emerald-500 text-white' 
+                                                  : 'bg-slate-900 border border-slate-850 text-brand-lime hover:bg-black'
+                                              }`}
+                                            >
+                                              {copiedText === "USDT" ? '¡Copiado!' : 'Copiar'}
+                                            </button>
+                                          </div>
+                                        </div>
+                                        <p className="text-[8px] uppercase tracking-tight text-slate-400 leading-normal font-mono">
+                                          • Envía exactamente el valor del plan para evitar demoras. La red tarda ~1 a 3 minutos en procesar.
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {paymentMethod === 'BINANCE' && (
+                                  <div className="space-y-4 animate-[fadeIn_0.2s_ease-out]">
+                                    <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-widest text-slate-400 font-mono">
+                                      <span>Binance Pay Directo</span>
+                                      <span className="text-yellow-600 bg-yellow-400/10 border border-yellow-400/20 px-2 py-0.5 rounded text-[8.5px]">Cero Comisión / Instantáneo</span>
+                                    </div>
+
+                                    <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-3 rounded-xl border border-slate-100">
+                                      {/* Stylized Simulated QR Code */}
+                                      <div className="flex flex-col items-center space-y-1.5 shrink-0 bg-slate-50 p-2.5 rounded-lg border border-slate-100 shadow-inner">
+                                        <div className="w-[100px] h-[100px] relative bg-white border border-slate-200/60 p-1.5 flex items-center justify-center rounded">
+                                          {/* Scan Corner Markers */}
+                                          <div className="absolute top-1 left-1 w-3.5 h-3.5 border-t-2 border-l-2 border-yellow-500"></div>
+                                          <div className="absolute top-1 right-1 w-3.5 h-3.5 border-t-2 border-r-2 border-yellow-500"></div>
+                                          <div className="absolute bottom-1 left-1 w-3.5 h-3.5 border-b-2 border-l-2 border-yellow-500"></div>
+                                          <div className="absolute bottom-1 right-1 w-3.5 h-3.5 border-b-2 border-r-2 border-yellow-500"></div>
+                                          
+                                          {/* Abstract elegant Binance-like QR pattern */}
+                                          <svg viewBox="0 0 100 100" className="w-full h-full text-slate-800" fill="currentColor">
+                                            {/* Squares for QR position */}
+                                            <rect x="5" y="5" width="25" height="25" fill="none" stroke="currentColor" strokeWidth="5"></rect>
+                                            <rect x="11" y="11" width="13" height="13"></rect>
+                                            <rect x="70" y="5" width="25" height="25" fill="none" stroke="currentColor" strokeWidth="5"></rect>
+                                            <rect x="76" y="11" width="13" height="13"></rect>
+                                            <rect x="5" y="70" width="25" height="25" fill="none" stroke="currentColor" strokeWidth="5"></rect>
+                                            <rect x="11" y="76" width="13" height="13"></rect>
+                                            {/* Yellow Binance Diamond Core */}
+                                            <path d="M 50,40 L 60,50 L 50,60 L 40,50 Z" className="text-yellow-500" fill="currentColor"></path>
+                                            {/* Scattered mock pixel data */}
+                                            <rect x="42" y="10" width="6" height="6"></rect>
+                                            <rect x="52" y="5" width="6" height="12"></rect>
+                                            <rect x="62" y="15" width="6" height="6"></rect>
+                                            <rect x="35" y="30" width="12" height="6"></rect>
+                                            <rect x="62" y="35" width="6" height="12"></rect>
+                                            <rect x="12" y="45" width="6" height="6"></rect>
+                                            <rect x="22" y="52" width="6" height="6"></rect>
+                                            <rect x="14" y="62" width="12" height="6"></rect>
+                                            <rect x="42" y="68" width="6" height="6"></rect>
+                                            <rect x="54" y="72" width="6" height="12"></rect>
+                                            <rect x="38" y="82" width="12" height="6"></rect>
+                                            <rect x="72" y="45" width="12" height="6"></rect>
+                                            <rect x="82" y="58" width="6" height="12"></rect>
+                                            <rect x="72" y="82" width="6" height="10"></rect>
+                                            <rect x="82" y="72" width="10" height="6"></rect>
+                                          </svg>
+                                        </div>
+                                        <span className="text-[7.5px] uppercase tracking-widest text-[#E5B800] font-bold font-mono">Scan Pay ID</span>
+                                      </div>
+
+                                      <div className="space-y-2.5 w-full text-slate-800">
+                                        <div className="space-y-1">
+                                          <span className="block text-[8px] uppercase tracking-wider text-slate-400 font-extrabold font-mono">Opción 1: Binance Pay ID:</span>
+                                          <div className="flex items-center gap-1.5">
+                                            <input
+                                              type="text"
+                                              readOnly
+                                              value="888777123"
+                                              className="w-full bg-slate-50 border border-slate-100 rounded-lg py-2 px-3 text-[10px] font-mono text-slate-800 select-all focus:outline-none"
+                                            />
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                navigator.clipboard.writeText("888777123");
+                                                setCopiedText("PAYID");
+                                                setTimeout(() => setCopiedText(""), 2000);
+                                              }}
+                                              className={`px-3 py-2 rounded-lg text-[9px] uppercase tracking-wider font-extrabold cursor-pointer transition shrink-0 ${
+                                                copiedText === "PAYID" 
+                                                  ? 'bg-emerald-500 text-white' 
+                                                  : 'bg-slate-900 border border-slate-850 text-[#E5B800] hover:bg-black'
+                                              }`}
+                                            >
+                                              {copiedText === "PAYID" ? '¡Copiado!' : 'Copiar'}
+                                            </button>
+                                          </div>
+                                        </div>
+
+                                        <div className="space-y-1">
+                                          <span className="block text-[8px] uppercase tracking-wider text-slate-400 font-extrabold font-mono">Opción 2: Correo Binance:</span>
+                                          <div className="flex items-center gap-1.5">
+                                            <input
+                                              type="text"
+                                              readOnly
+                                              value="pagos@iaxaukin.com"
+                                              className="w-full bg-slate-50 border border-slate-100 rounded-lg py-1.5 px-2.5 text-[10px] font-mono text-slate-800 select-all focus:outline-none"
+                                            />
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                navigator.clipboard.writeText("pagos@iaxaukin.com");
+                                                setCopiedText("BEMAIL");
+                                                setTimeout(() => setCopiedText(""), 2000);
+                                              }}
+                                              className={`px-2.5 py-1.5 rounded-lg text-[9px] uppercase tracking-wider font-extrabold cursor-pointer transition shrink-0 ${
+                                                copiedText === "BEMAIL" 
+                                                  ? 'bg-emerald-500 text-white' 
+                                                  : 'bg-slate-900 border border-slate-850 text-[#E5B800] hover:bg-black'
+                                              }`}
+                                            >
+                                              {copiedText === "BEMAIL" ? '¡Copiado!' : 'Copiar'}
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Trazabilidad Information / How verification works */}
+                              <div className="p-3.5 bg-brand-lime/10 border border-brand-lime/20 rounded-2xl space-y-1.5">
+                                <span className="block text-[9px] uppercase tracking-wider text-brand-navy font-black font-mono">
+                                  📊 ¿Cómo funciona la trazabilidad y activación?
+                                </span>
+                                <ul className="text-[8.5px] uppercase font-mono tracking-tight text-slate-600 space-y-1 list-none font-bold">
+                                  <li>• Paga el valor correspondiente a tu membresía.</li>
+                                  <li>• Adjunta la captura de tu pago o pon el código de transacción.</li>
+                                  <li>• Tu solicitud pasa a estado <b className="text-amber-600">PENDIENTE</b> en la base de datos de Firestore.</li>
+                                  <li>• Los administradores verifican el comprobante o el canal financiero.</li>
+                                  <li>• Al aprobarse, tu terminal se activa automáticamente por 30 días.</li>
+                                </ul>
+                              </div>
+
+                              {/* PNG/JPG Receipt Upload Feature */}
+                              <div className="space-y-2">
+                                <label className="block text-[10px] uppercase tracking-wider text-slate-400 font-extrabold font-mono ml-1">
+                                  ¿Tienes la captura de pantalla de tu pago? (Recomendado)
+                                </label>
+                                
+                                {paymentTxHash.startsWith('data:image') ? (
+                                  <div className="relative p-3 bg-slate-50 border border-emerald-250 rounded-2xl flex flex-col items-center justify-center space-y-2 animate-[fadeIn_0.2s_ease-out]">
+                                    <img 
+                                      src={paymentTxHash} 
+                                      alt="Comprobante cargado" 
+                                      className="h-28 object-contain rounded-lg border border-slate-200 bg-white p-1 shadow-sm"
+                                    />
+                                    <div className="flex gap-2 items-center">
+                                      <span className="text-[8px] uppercase font-mono tracking-wider font-extrabold text-emerald-600 bg-emerald-50 border border-emerald-200/50 px-2 py-0.5 rounded">
+                                        ✓ Captura Cargada Con Éxito
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setPaymentTxHash('')}
+                                        className="text-[8.5px] uppercase font-mono tracking-wider font-black text-red-500 hover:text-red-700 cursor-pointer"
+                                      >
+                                        [Eliminar]
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="relative border-2 border-dashed border-slate-200 hover:border-slate-300 rounded-2xl transition duration-200 bg-slate-50 hover:bg-slate-100/70 flex flex-col items-center justify-center p-5 text-center group">
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={handleReceiptFileChange}
+                                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                      disabled={receiptFileLoading}
+                                    />
+                                    {receiptFileLoading ? (
+                                      <div className="flex flex-col items-center space-y-2 pb-1">
+                                        <Loader2 className="w-5 h-5 text-brand-navy animate-spin" />
+                                        <span className="text-[9px] uppercase font-bold tracking-wider text-slate-500 font-mono">Procesando imagen...</span>
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-1.5 flex flex-col items-center">
+                                        <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-slate-400 group-hover:scale-105 transition duration-150 shadow-sm border border-slate-100">
+                                          <Upload size={13} className="text-slate-500 animate-pulse" />
+                                        </div>
+                                        <div>
+                                          <span className="text-[9.5px] font-bold text-slate-700 block uppercase font-mono">
+                                            Sube tu foto, captura o comprobante
+                                          </span>
+                                          <span className="text-[7.5px] uppercase tracking-wide text-slate-400 font-mono font-bold block mt-0.5">
+                                            Arrastra el archivo o haz clic aquí (PNG, JPG, JPEG)
+                                          </span>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="relative flex py-1.5 items-center">
+                                <div className="flex-grow border-t border-slate-200/85"></div>
+                                <span className="flex-shrink mx-3 text-[8.5px] uppercase font-bold text-slate-300 font-mono tracking-widest">O si prefieres</span>
+                                <div className="flex-grow border-t border-slate-200/85"></div>
+                              </div>
+
+                              <div className="space-y-2">
+                                <label className="block text-[10px] uppercase tracking-wider text-slate-400 font-black font-mono ml-1">
+                                  {paymentMethod === 'BINANCE' 
+                                    ? 'Binance Pay ID de Origen / ID de Transacción'
+                                    : 'ID de Transferencia / Hash de Pago (TXID)'}
+                                </label>
+                                <input
+                                  type="text"
+                                  required={!paymentTxHash.startsWith('data:image')}
+                                  value={paymentTxHash.startsWith('data:image') ? '' : paymentTxHash}
+                                  onChange={(e) => setPaymentTxHash(e.target.value)}
+                                  placeholder={
+                                    paymentMethod === 'BINANCE'
+                                      ? "Escribe el Binance Pay ID de tu cuenta"
+                                      : "Escribe el Hash (TXID) de tu transferencia"
+                                  }
+                                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3.5 px-4 text-xs font-mono tracking-widest text-slate-900 placeholder:text-slate-300 focus:outline-none focus:bg-white focus:border-slate-400"
+                                />
+                              </div>
+
+                              {paymentError && (
+                                <div className="p-3.5 bg-red-50 border border-red-100 text-red-500 text-[10.5px] font-semibold rounded-xl uppercase tracking-wider">
+                                  {paymentError}
+                                </div>
+                              )}
+
+                              {paymentSuccess && (
+                                <div className="p-3.5 bg-emerald-50 border border-emerald-100 text-emerald-600 text-[10.5px] font-semibold rounded-xl uppercase tracking-wider animate-pulse">
+                                  {paymentSuccess}
+                                </div>
+                              )}
+
+                              <button
+                                type="submit"
+                                disabled={isSubmittingPayment}
+                                className="w-full py-4 bg-slate-900 hover:bg-black text-brand-lime font-bold rounded-xl text-[10px] uppercase tracking-widest transition-all cursor-pointer shadow-md flex items-center justify-center gap-1.5"
+                              >
+                                {isSubmittingPayment ? (
+                                  <span>Registrando Transacción...</span>
+                                ) : (
+                                  <span>REGISTRAR COMPROBANTE Y ENVIAR REGISTRO</span>
+                                )}
+                              </button>
+                            </form>
+                          )}
+                        </motion.div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </motion.main>
               ) : (
                 /* =================== STANDARD TRADING TERMINAL =================== */
@@ -1124,22 +1709,22 @@ export default function App() {
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -15 }}
-                  className="max-w-6xl mx-auto px-6 py-16"
+                  className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-16"
                 >
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-16">
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-16">
                     
                     {/* Left Column: Upload & Preview */}
-                    <div className="lg:col-span-5 space-y-10">
-                      <section className="space-y-4">
+                    <div className="lg:col-span-5 space-y-8 sm:space-y-10">
+                      <section className="space-y-3 sm:space-y-4">
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-brand-lime animate-pulse" />
                           <span className="text-[9px] uppercase tracking-[0.3em] text-slate-400 font-mono font-bold">Terminal en Línea</span>
                         </div>
-                        <h2 className="text-4xl font-serif italic text-slate-900 leading-tight">
-                          Modelado de <br />
+                        <h2 className="text-2xl sm:text-4xl font-serif italic text-slate-900 leading-tight">
+                          Modelado de <br className="hidden sm:block" />
                           <span className="text-brand-lime">Estructura Cuantitativa</span>
                         </h2>
-                        <p className="text-slate-500 text-sm leading-relaxed max-w-sm">
+                        <p className="text-slate-500 text-xs sm:text-sm leading-relaxed max-w-sm">
                           Cargue la telemetría visual de TradingView (XAUUSD). IA XAU KIN ejecutará un escaneo de alta precisión para identificar desequilibrios, BOS y CHoCH en ventanas de 60 minutos.
                         </p>
                       </section>
@@ -1203,18 +1788,41 @@ export default function App() {
                       </div>
 
                       {currentUser && (
-                        <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-widest text-slate-400 px-1 mb-4">
-                          <div className="flex items-center gap-1.5">
-                            <div className={`w-1.5 h-1.5 rounded-full ${dailyAnalysisCount >= (currentUser.role === 'ADMIN' ? 9999 : (currentUser.plan === 'RETAIL' ? 5 : currentUser.plan === 'PRO' ? 30 : 100)) ? 'bg-red-400 animate-pulse' : 'bg-brand-lime'}`}></div>
-                            <span>Créditos Diarios</span>
+                        <div className="space-y-2 mb-4">
+                          <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-widest text-slate-400 px-1">
+                            <div className="flex items-center gap-1.5">
+                              <div className={`w-1.5 h-1.5 rounded-full ${dailyAnalysisCount >= (currentUser.role === 'ADMIN' ? 9999 : (currentUser.plan === 'RETAIL' ? 5 : currentUser.plan === 'PRO' ? 30 : 100)) ? 'bg-red-500 animate-pulse' : 'bg-brand-lime'}`}></div>
+                              <span>Suscripción Activa</span>
+                            </div>
+                            <span className="font-mono text-slate-500 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-100">
+                              {currentUser.role === 'ADMIN' ? (
+                                <span>Operador Admin</span>
+                              ) : (
+                                <span>Socio {currentUser.plan}</span>
+                              )}
+                            </span>
                           </div>
-                          <span className="font-mono text-slate-500 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-100">
-                            {currentUser.role === 'ADMIN' ? (
-                              <span>{dailyAnalysisCount} / ILIMITADO</span>
-                            ) : (
-                              <span>{dailyAnalysisCount} / {currentUser.plan === 'RETAIL' ? 5 : currentUser.plan === 'PRO' ? 30 : 100} CONSULTAS</span>
+                          
+                          <div className="bg-slate-50/50 rounded-2xl p-4 border border-slate-100 flex flex-col gap-2">
+                            <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-widest text-slate-600">
+                              <span>Créditos de Hoy:</span>
+                              <span className="font-mono">
+                                {currentUser.role === 'ADMIN' ? (
+                                  <span>ILIMITADO</span>
+                                ) : (
+                                  <span>{dailyAnalysisCount} / {currentUser.plan === 'RETAIL' ? 5 : currentUser.plan === 'PRO' ? 30 : 100} CONSULTAS</span>
+                                )}
+                              </span>
+                            </div>
+                            {currentUser.role !== 'ADMIN' && (
+                              <div className="text-[9.5px] text-slate-400 normal-case font-medium flex justify-between items-center border-t border-slate-100/60 pt-2">
+                                <span>Capacidad mensual de tu plan:</span>
+                                <span className="font-bold text-slate-700 bg-brand-lime/10 text-[9px] px-2 py-0.5 rounded border border-brand-lime/10">
+                                  {currentUser.plan === 'RETAIL' ? "Hasta 150 / Mes" : currentUser.plan === 'PRO' ? "Hasta 900 / Mes" : "Hasta 3,000 / Mes"}
+                                </span>
+                              </div>
                             )}
-                          </span>
+                          </div>
                         </div>
                       )}
 
@@ -1265,7 +1873,7 @@ export default function App() {
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -20 }}
-                            className="glass-card rounded-[2.5rem] p-10 shadow-premium relative overflow-hidden"
+                            className="glass-card rounded-[1.5rem] sm:rounded-[2.5rem] p-5 sm:p-10 shadow-premium relative overflow-hidden"
                           >
                             <div className="relative space-y-8">
                               <div className="flex items-center justify-between border-b border-slate-50 pb-8">
@@ -1319,13 +1927,13 @@ export default function App() {
                             key="placeholder"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
-                            className="h-full min-h-[500px] glass-card rounded-[2.5rem] flex flex-col items-center justify-center text-center p-16 shadow-premium"
+                            className="min-h-[320px] sm:min-h-[500px] h-full glass-card rounded-[1.5rem] sm:rounded-[2.5rem] flex flex-col items-center justify-center text-center p-6 sm:p-16 shadow-premium"
                           >
-                            <div className="w-24 h-24 bg-slate-50 rounded-[2rem] flex items-center justify-center mb-8 animate-pulse">
-                              <BrainCircuit className="text-slate-200 w-12 h-12" />
+                            <div className="w-16 h-16 sm:w-24 sm:h-24 bg-slate-50 rounded-[1.5rem] sm:rounded-[2rem] flex items-center justify-center mb-6 sm:mb-8 animate-pulse shrink-0">
+                              <BrainCircuit className="text-slate-200 w-8 h-8 sm:w-12 sm:h-12" />
                             </div>
-                            <h3 className="text-slate-900 font-serif italic text-xl mb-3">Mesa Analítica en Standby</h3>
-                            <p className="text-slate-400 text-sm max-w-xs leading-relaxed">
+                            <h3 className="text-slate-900 font-serif italic text-lg sm:text-xl mb-2 sm:mb-3">Mesa Analítica en Standby</h3>
+                            <p className="text-slate-400 text-xs sm:text-sm max-w-xs leading-relaxed">
                               Socio <b className="text-slate-600">@{currentUser.username}</b> ({currentUser.plan}), cargue la telemetría visual de su par XAUUSD para iniciar el modelado algorítmico.
                             </p>
                           </motion.div>
@@ -1530,6 +2138,54 @@ export default function App() {
                     </div>
                   </motion.div>
                 </div>
+              )}
+            </AnimatePresence>
+
+            {/* Lightbox for Payment Receipts Screenshots */}
+            <AnimatePresence>
+              {adminLightboxImage && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-[999] flex items-center justify-center p-4 sm:p-6"
+                  onClick={() => setAdminLightboxImage(null)}
+                >
+                  <motion.div
+                    initial={{ scale: 0.95, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.95, opacity: 0 }}
+                    className="bg-white rounded-3xl p-4 sm:p-6 max-w-xl w-full border border-slate-150 shadow-2xl relative space-y-4"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                      <span className="text-[10px] uppercase font-mono tracking-widest font-black text-slate-800 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Comprobante de Pago Regulado
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setAdminLightboxImage(null)}
+                        className="text-slate-500 hover:text-slate-800 font-bold text-[9px] uppercase font-mono tracking-widest bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer"
+                      >
+                        Cerrar
+                      </button>
+                    </div>
+                    
+                    <div className="bg-slate-50 rounded-2xl p-2.5 flex items-center justify-center border border-slate-100 max-h-[70vh] overflow-auto select-none">
+                      <img
+                        src={adminLightboxImage}
+                        alt="Captura comprobante completo"
+                        className="max-h-[55vh] object-contain rounded-xl shadow-sm bg-white"
+                      />
+                    </div>
+
+                    <div className="text-center font-sans pb-1">
+                      <span className="text-[8.5px] uppercase font-bold tracking-wider text-slate-400 font-mono">
+                        Validación y aprobación manual por Administración IA XAU KIN
+                      </span>
+                    </div>
+                  </motion.div>
+                </motion.div>
               )}
             </AnimatePresence>
           </>

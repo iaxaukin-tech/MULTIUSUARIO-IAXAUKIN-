@@ -185,11 +185,11 @@ export const Login = ({ onLogin, navigateTo }: LoginProps) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950/25 backdrop-blur-md p-4">
+    <div className="fixed inset-0 z-[100] flex justify-center items-start sm:items-center overflow-y-auto bg-slate-950/25 backdrop-blur-md p-4 py-8 sm:py-12">
       <motion.div 
         initial={{ opacity: 0, y: 25 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative w-full max-w-md px-6 py-8 glass-card rounded-[2rem] shadow-premium my-auto bg-white/95 border border-slate-100"
+        className="relative w-full max-w-md px-4 sm:px-6 py-6 sm:py-8 glass-card rounded-[1.5rem] sm:rounded-[2rem] shadow-premium my-auto bg-white/95 border border-slate-100"
       >
         <div className="flex flex-col items-center mb-5">
           <TechnicalLogo />
@@ -386,9 +386,9 @@ export const Login = ({ onLogin, navigateTo }: LoginProps) => {
                 <span className={`block text-[7px] font-bold uppercase tracking-tight leading-none ${
                   selectedPlanPreview === 'INSTITUTIONAL' ? 'text-gold' : 'text-slate-400'
                 }`}>INSTIT.</span>
-                <span className={`block font-serif italic text-xs font-bold mt-0.5 ${
+                <span className={`block font-serif italic text-[8px] font-bold mt-0.5 ${
                   selectedPlanPreview === 'INSTITUTIONAL' ? 'text-white' : 'text-slate-900'
-                }`}>$199</span>
+                }`}>{PLAN_DETAILS['INSTITUTIONAL'].price}</span>
               </button>
             </div>
 
