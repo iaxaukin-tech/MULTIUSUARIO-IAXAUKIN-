@@ -61,7 +61,7 @@ service cloud.firestore {
             !('expiresAt' in data) || data.expiresAt is string
           )
           && (
-            !('paymentReceiptUrl' in data) || (data.paymentReceiptUrl is string && data.paymentReceiptUrl.size() <= 256)
+            !('paymentReceiptUrl' in data) || (data.paymentReceiptUrl is string && data.paymentReceiptUrl.size() <= 1000000)
           )
           && (
             !('lastAnalysisAt' in data) || data.lastAnalysisAt is string
@@ -165,6 +165,13 @@ service cloud.firestore {
         && incoming().uid == request.auth.uid;
         
       allow update, delete: if isAdmin();
+    }
+
+    // Rules for /settings/{settingId}
+    match /settings/{settingId} {
+      allow get: if true; // Readable by all operators and visitors
+      allow list: if false; // Block listing to prevent leaking settings structure
+      allow create, update, delete: if isAdmin(); // Only admins can design/alter core settings
     }
 
   }

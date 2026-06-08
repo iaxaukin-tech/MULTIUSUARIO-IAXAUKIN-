@@ -12,6 +12,9 @@ export interface User {
   expiresAt?: string;
   paymentReceiptUrl?: string;
   lastAnalysisAt?: string;
+  isTelemetryLimited?: boolean;
+  allowedTotalAnalyses?: number;
+  totalAnalysesCount?: number;
   dailyUsage?: {
     date: string; // Formatted local date YYYY-MM-DD
     count: number;
@@ -25,6 +28,8 @@ export interface ActivationCode {
   isUsed: boolean;
   usedBy?: string;
   createdAt: string;
+  isTelemetryLimited?: boolean;
+  allowedTotalAnalyses?: number;
 }
 
 export interface MarketPlanDetails {

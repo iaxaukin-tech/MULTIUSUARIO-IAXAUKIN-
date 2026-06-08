@@ -320,6 +320,54 @@ export default function App() {
   const [adminLightboxImage, setAdminLightboxImage] = useState<string | null>(null);
   const [receiptFileLoading, setReceiptFileLoading] = useState(false);
 
+  // Dynamic Payment Configuration State from Firebase
+  const [paymentConfig, setPaymentConfig] = useState<{
+    usdtAddress: string;
+    binancePayId: string;
+    binanceEmail: string;
+    customMessage?: string;
+    usdtQrImage?: string;
+    binanceQrImage?: string;
+  }>({
+    usdtAddress: 'TCWAFUsu2iuwkrQyATGKBjdSYczm2pVDGk', // Owner's new address as default
+    binancePayId: '1129008012',
+    binanceEmail: 'pagos@iaxaukin.com',
+    customMessage: 'Envía el monto neto exacto de tu plan. No cubrimos comisiones de retiro de exchanges externos. Tu licencia se activará tras confirmación manual.',
+    usdtQrImage: '',
+    binanceQrImage: ''
+  });
+  const [isUpdatingPaymentConfig, setIsUpdatingPaymentConfig] = useState(false);
+  const [paymentConfigMsg, setPaymentConfigMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Fetch dynamic payment settings on app mount
+  useEffect(() => {
+    const loadPaymentConfig = async () => {
+      try {
+        const config = await userStore.getPaymentConfig();
+        setPaymentConfig(config);
+      } catch (err) {
+        console.warn("Could not load dynamic payment configuration:", err);
+      }
+    };
+    loadPaymentConfig();
+  }, []);
+
+  const handleUpdatePaymentConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsUpdatingPaymentConfig(true);
+    setPaymentConfigMsg(null);
+    try {
+      await userStore.updatePaymentConfig(paymentConfig);
+      setPaymentConfigMsg({ type: 'success', text: 'Parámetros de depósito actualizados con éxito en la base de datos.' });
+      setTimeout(() => setPaymentConfigMsg(null), 5000);
+    } catch (err: any) {
+      console.error("Error updating payment configuration:", err);
+      setPaymentConfigMsg({ type: 'error', text: err.message || 'No se pudo actualizar la configuración en Firestore.' });
+    } finally {
+      setIsUpdatingPaymentConfig(false);
+    }
+  };
+
   const handleReceiptFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -339,6 +387,28 @@ export default function App() {
       setPaymentError("No se pudo procesar la imagen del comprobante.");
     } finally {
       setReceiptFileLoading(false);
+    }
+  };
+
+  const handleUsdtQrChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const base64 = await compressImage(file);
+      setPaymentConfig(prev => ({ ...prev, usdtQrImage: base64 }));
+    } catch (err) {
+      console.error("Error loading USDT QR image:", err);
+    }
+  };
+
+  const handleBinanceQrChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const base64 = await compressImage(file);
+      setPaymentConfig(prev => ({ ...prev, binanceQrImage: base64 }));
+    } catch (err) {
+      console.error("Error loading Binance QR image:", err);
     }
   };
 
@@ -386,6 +456,8 @@ export default function App() {
   const [allCodes, setAllCodes] = useState<ActivationCode[]>([]);
   const [newCodePlan, setNewCodePlan] = useState<SubscriptionPlan>('PRO');
   const [newCodeDuration, setNewCodeDuration] = useState(30);
+  const [isTelemetryLimited, setIsTelemetryLimited] = useState(false);
+  const [allowedTotalAnalyses, setAllowedTotalAnalyses] = useState(3);
 
   // Client-side API Key states for manual override in production/shared mode
   const [customApiKey, setCustomApiKey] = useState<string>(() => localStorage.getItem("manual_gemini_api_key") || "");
@@ -465,7 +537,11 @@ export default function App() {
   const handleGenerateCode = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await userStore.generateCode(newCodePlan, newCodeDuration);
+      if (isTelemetryLimited) {
+        await userStore.generateCode(newCodePlan, newCodeDuration, true, allowedTotalAnalyses);
+      } else {
+        await userStore.generateCode(newCodePlan, newCodeDuration, false);
+      }
       const fetchedCodes = await userStore.getCodes();
       setAllCodes(fetchedCodes);
     } catch (err: any) {
@@ -616,22 +692,31 @@ export default function App() {
       return;
     }
 
-    // Daily analysis count limit verification
+    // Daily or total analysis count limit verification
     if (currentUser.role !== 'ADMIN') {
-      const planLimits = {
-        RETAIL: 5,
-        PRO: 30,
-        INSTITUTIONAL: 100
-      };
-      const activeLimit = planLimits[currentUser.plan] || 5;
-      try {
-        const currentCount = await userStore.getDailyAnalysisCount(currentUser.id);
-        if (currentCount >= activeLimit) {
-          setError(`LÍMITE DIARIO EXCEDIDO: Has agotado tus ${activeLimit} análisis diarios asignados para tu plan ${currentUser.plan}. Para seguir analizando gráficos de TradingView, sube de nivel tu membresía con un nuevo código o contacta con soporte.`);
+      if (currentUser.isTelemetryLimited) {
+        const allowed = currentUser.allowedTotalAnalyses || 3;
+        const totalUsed = currentUser.totalAnalysesCount || 0;
+        if (totalUsed >= allowed) {
+          setError(`LÍMITE TOTAL ALCANZADO: Has agotado los ${allowed} análisis totales asignados por tu código de cortesía de telemetría. Para seguir analizando gráficos de TradingView, sube de nivel tu membresía con un nuevo código de activación completo.`);
           return;
         }
-      } catch (checkErr) {
-        console.warn("Fallo el chequeo de límites de uso:", checkErr);
+      } else {
+        const planLimits = {
+          RETAIL: 5,
+          PRO: 30,
+          INSTITUTIONAL: 100
+        };
+        const activeLimit = planLimits[currentUser.plan] || 5;
+        try {
+          const currentCount = await userStore.getDailyAnalysisCount(currentUser.id);
+          if (currentCount >= activeLimit) {
+            setError(`LÍMITE DIARIO EXCEDIDO: Has agotado tus ${activeLimit} análisis diarios asignados para tu plan ${currentUser.plan}. Para seguir analizando gráficos de TradingView, sube de nivel tu membresía con un nuevo código o contacta con soporte.`);
+            return;
+          }
+        } catch (checkErr) {
+          console.warn("Fallo el chequeo de límites de uso:", checkErr);
+        }
       }
     }
 
@@ -1071,19 +1156,54 @@ export default function App() {
                             </select>
                           </div>
 
-                          <div className="space-y-1.5">
-                            <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Duración de Membresía</label>
-                            <select 
-                              value={newCodeDuration} 
-                              onChange={(e) => setNewCodeDuration(Number(e.target.value))}
-                              className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3 px-3.5 text-xs text-slate-900 focus:outline-none"
-                            >
-                              <option value="7">Trial - 7 Días</option>
-                              <option value="30">Mensual - 30 Días</option>
-                              <option value="90">Trimestral - 90 Días</option>
-                              <option value="365">Anual - 365 Días</option>
-                            </select>
+                          <div className="space-y-2 bg-slate-50/80 p-3.5 rounded-2xl border border-slate-100/80">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[9.5px] text-slate-700 font-bold uppercase tracking-wider block font-sans">
+                                Cortesía 3 Telemetrías
+                              </span>
+                              <label className="relative inline-flex items-center cursor-pointer">
+                                <input 
+                                  type="checkbox" 
+                                  checked={isTelemetryLimited} 
+                                  onChange={(e) => setIsTelemetryLimited(e.target.checked)}
+                                  className="sr-only peer"
+                                />
+                                <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-lime"></div>
+                              </label>
+                            </div>
+                            <p className="text-[8px] text-slate-400 uppercase tracking-wide font-medium mt-0.5 leading-normal">
+                              Activa el modo de evaluación con un cupo estricto de 3 análisis totales en lugar de membresía por tiempo ilimitado.
+                            </p>
                           </div>
+
+                          {!isTelemetryLimited ? (
+                            <div className="space-y-1.5 animate-[fadeIn_0.2s_ease-out]">
+                              <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Duración de Membresía</label>
+                              <select 
+                                value={newCodeDuration} 
+                                onChange={(e) => setNewCodeDuration(Number(e.target.value))}
+                                className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3 px-3.5 text-xs text-slate-900 focus:outline-none"
+                              >
+                                <option value="7">Trial - 7 Días</option>
+                                <option value="30">Mensual - 30 Días</option>
+                                <option value="90">Trimestral - 90 Días</option>
+                                <option value="365">Anual - 365 Días</option>
+                              </select>
+                            </div>
+                          ) : (
+                            <div className="space-y-1.5 animate-[fadeIn_0.2s_ease-out]">
+                              <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Cupo de Telemetrías</label>
+                              <select 
+                                value={allowedTotalAnalyses} 
+                                onChange={(e) => setAllowedTotalAnalyses(Number(e.target.value))}
+                                className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3 px-3.5 text-xs text-slate-900 focus:outline-none"
+                              >
+                                <option value="3">3 Telemetrías</option>
+                                <option value="5">5 Telemetrías</option>
+                                <option value="10">10 Telemetrías</option>
+                              </select>
+                            </div>
+                          )}
 
                           <button
                             type="submit"
@@ -1103,7 +1223,9 @@ export default function App() {
                             <div key={c.code} className="flex justify-between items-center p-3.5 rounded-xl border border-slate-50 bg-slate-50/50 text-[10px] font-mono">
                               <div>
                                 <span className="font-extrabold text-slate-800 select-all block">{c.code}</span>
-                                <span className="text-[7.5px] text-slate-400 uppercase tracking-widest block font-sans mt-0.5">{c.plan} • {c.durationDays} Días</span>
+                                <span className="text-[7.5px] text-slate-400 uppercase tracking-widest block font-sans mt-0.5">
+                                  {c.plan} • {c.isTelemetryLimited ? `${c.allowedTotalAnalyses || 3} Telemetrías` : `${c.durationDays} Días`}
+                                </span>
                               </div>
                               {c.isUsed ? (
                                 <span className="text-[7.5px] uppercase tracking-widest bg-slate-100 text-slate-400 px-2 py-0.5 rounded-md font-sans">Usado: @{c.usedBy}</span>
@@ -1113,6 +1235,146 @@ export default function App() {
                             </div>
                           ))}
                         </div>
+                      </div>
+
+                      {/* Admin-only Dynamic Payment Methods Config Panel */}
+                      <div className="glass-card rounded-[2rem] p-7 shadow-premium space-y-5">
+                        <div>
+                          <h4 className="text-lg font-serif italic text-slate-900 font-bold">Canales de Depósito</h4>
+                          <p className="text-[8.5px] uppercase tracking-widest text-[#E5B800] font-bold">CONFIGURACIÓN DE PAGOS TRC20 Y BINANCE</p>
+                        </div>
+
+                        <form onSubmit={handleUpdatePaymentConfig} className="space-y-4">
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block font-mono">Dirección USDT (TRC20)</label>
+                            <input
+                              type="text"
+                              required
+                              value={paymentConfig.usdtAddress}
+                              onChange={(e) => setPaymentConfig(prev => ({ ...prev, usdtAddress: e.target.value }))}
+                              placeholder="Ej: TCWAFUsu2iuwkrQyATGKBjdSYczm2pVDGk"
+                              className="w-full bg-slate-50 border border-slate-100 rounded-xl py-2.5 px-3.5 text-[10.5px] font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#22C55E]"
+                            />
+                          </div>
+
+                          {/* Custom USDT QR Upload */}
+                          <div className="space-y-1 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                            <label className="text-[8px] text-[#22C55E] font-black uppercase tracking-wider block font-mono">
+                              QR USDT TRC20 Personalizado (Opcional)
+                            </label>
+                            {paymentConfig.usdtQrImage ? (
+                              <div className="flex items-center gap-2.5 animate-[fadeIn_0.2s_ease-out]">
+                                <img 
+                                  src={paymentConfig.usdtQrImage} 
+                                  alt="USDT Custom QR" 
+                                  className="w-10 h-10 rounded border border-slate-200 bg-white object-contain p-0.5"
+                                />
+                                <div className="space-y-0.5">
+                                  <span className="block text-[7.5px] uppercase tracking-wider text-emerald-600 font-bold font-mono">✓ QR Activo</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPaymentConfig(prev => ({ ...prev, usdtQrImage: '' }))}
+                                    className="text-[8px] uppercase font-mono tracking-wider font-black text-red-500 hover:text-red-700 cursor-pointer"
+                                  >
+                                    [Eliminar]
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={handleUsdtQrChange}
+                                className="block w-full text-[8.5px] font-mono font-extrabold text-slate-500
+                                  file:mr-3 file:py-1 file:px-2.5
+                                  file:rounded-lg file:border-0
+                                  file:text-[8px] file:font-semibold
+                                  file:bg-slate-900 file:text-brand-lime
+                                  hover:file:bg-black file:cursor-pointer"
+                              />
+                            )}
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block font-mono">Binance Pay ID</label>
+                            <input
+                              type="text"
+                              required
+                              value={paymentConfig.binancePayId}
+                              onChange={(e) => setPaymentConfig(prev => ({ ...prev, binancePayId: e.target.value }))}
+                              placeholder="Ej: 888777123"
+                              className="w-full bg-slate-50 border border-slate-100 rounded-xl py-2.5 px-3.5 text-[10.5px] font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#E5B800]"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block font-mono">Correo Binance Account</label>
+                            <input
+                              type="email"
+                              required
+                              value={paymentConfig.binanceEmail}
+                              onChange={(e) => setPaymentConfig(prev => ({ ...prev, binanceEmail: e.target.value }))}
+                              placeholder="Ej: pagos@iaxaukin.com"
+                              className="w-full bg-slate-50 border border-slate-100 rounded-xl py-2.5 px-3.5 text-[10.5px] font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#E5B800]"
+                            />
+                          </div>
+
+                          {/* Custom Binance QR Upload */}
+                          <div className="space-y-1 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                            <label className="text-[8px] text-[#E5B800] font-black uppercase tracking-wider block font-mono">
+                              QR Binance Pay Personalizado (Opcional)
+                            </label>
+                            {paymentConfig.binanceQrImage ? (
+                              <div className="flex items-center gap-2.5 animate-[fadeIn_0.2s_ease-out]">
+                                <img 
+                                  src={paymentConfig.binanceQrImage} 
+                                  alt="Binance Custom QR" 
+                                  className="w-10 h-10 rounded border border-slate-200 bg-white object-contain p-0.5"
+                                />
+                                <div className="space-y-0.5">
+                                  <span className="block text-[7.5px] uppercase tracking-wider text-yellow-600 font-bold font-mono">✓ QR Activo</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPaymentConfig(prev => ({ ...prev, binanceQrImage: '' }))}
+                                    className="text-[8px] uppercase font-mono tracking-wider font-black text-red-500 hover:text-red-700 cursor-pointer"
+                                  >
+                                    [Eliminar]
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={handleBinanceQrChange}
+                                className="block w-full text-[8.5px] font-mono font-extrabold text-slate-500
+                                  file:mr-3 file:py-1 file:px-2.5
+                                  file:rounded-lg file:border-0
+                                  file:text-[8px] file:font-semibold
+                                  file:bg-slate-900 file:text-[#E5B800]
+                                  hover:file:bg-black file:cursor-pointer"
+                              />
+                            )}
+                          </div>
+
+                          {paymentConfigMsg && (
+                            <div className={`p-3 rounded-xl text-[9px] uppercase font-mono tracking-wider font-extrabold ${paymentConfigMsg.type === 'success' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-red-50 text-red-500 border border-red-100'}`}>
+                              {paymentConfigMsg.type === 'success' ? '✓ ' : '✗ '} {paymentConfigMsg.text}
+                            </div>
+                          )}
+
+                          <button
+                            type="submit"
+                            disabled={isUpdatingPaymentConfig}
+                            className={`w-full py-3.5 bg-slate-950 text-brand-lime hover:bg-slate-800 font-bold rounded-xl text-[10px] uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-md ${isUpdatingPaymentConfig ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}
+                          >
+                            {isUpdatingPaymentConfig ? (
+                              <span className="animate-pulse">Guardando Configuración...</span>
+                            ) : (
+                              <span>✓ Actualizar Criptodatos</span>
+                            )}
+                          </button>
+                        </form>
                       </div>
                     </div>
                   </div>
@@ -1198,16 +1460,23 @@ export default function App() {
                               </ul>
                             </div>
 
-                            <button 
-                              onClick={() => setCheckoutPlan(pKey)}
-                              className={`w-full text-center py-3 font-bold uppercase tracking-wider text-[9px] rounded-xl mt-8 cursor-pointer transition-all duration-300 ${
-                                isInst 
-                                  ? 'bg-brand-lime text-slate-950 hover:bg-white hover:text-black shadow-lg shadow-brand-lime/10' 
-                                  : 'bg-slate-950 text-white hover:bg-slate-800'
-                              }`}
-                            >
-                              {isInst ? 'Contactar Gerencia' : 'Solicitar con Administración'}
-                            </button>
+                            {isInst ? (
+                              <a 
+                                id="contactar-gerencia-email-btn"
+                                href={`mailto:gerencia@iaxaukin.com?subject=Consulta%20Plan%20Institucional%20IA%20XAU%20KIN&body=Hola%20Gerencia,%20mi%20usuario%20de%20operador%20es%20@${currentUser?.username || ''}.%20Deseo%20obtener%20más%20información%20sobre%20el%20Plan%20Institucional.`}
+                                className="w-full text-center py-3 font-bold uppercase tracking-wider text-[9px] rounded-xl mt-8 cursor-pointer transition-all duration-300 bg-brand-lime text-slate-950 hover:bg-white hover:text-black shadow-lg shadow-brand-lime/10 block"
+                              >
+                                Contactar Gerencia
+                              </a>
+                            ) : (
+                              <button 
+                                id={`solicitar-plan-${pKey}-btn`}
+                                onClick={() => setCheckoutPlan(pKey)}
+                                className="w-full text-center py-3 font-bold uppercase tracking-wider text-[9px] rounded-xl mt-8 cursor-pointer transition-all duration-300 bg-slate-950 text-white hover:bg-slate-800 block"
+                              >
+                                Solicitar con Administración
+                              </button>
+                            )}
                           </div>
                         );
                       })}
@@ -1350,7 +1619,7 @@ export default function App() {
                               {/* Horizontal Payment Method Tabs */}
                               <div className="flex gap-1.5 border-b border-slate-100 pb-2">
                                 {[
-                                  { id: 'USDT', label: 'USDT (TRC10/20)', icon: Coins },
+                                  { id: 'USDT', label: 'USDT (TRC20)', icon: Coins },
                                   { id: 'BINANCE', label: 'Binance Pay', icon: QrCode }
                                 ].map((tab) => {
                                   const IconComponent = tab.icon;
@@ -1378,7 +1647,7 @@ export default function App() {
 
                               {/* Dynamic Payment Method Instruction Box */}
                               <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-4">
-                                {paymentMethod === 'USDT' && (
+                                {paymentMethod === 'USDT' ? (
                                   <div className="space-y-4 animate-[fadeIn_0.2s_ease-out]">
                                     <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-widest text-[#22C55E] font-mono">
                                       <span>Red de Pago USDT</span>
@@ -1386,47 +1655,17 @@ export default function App() {
                                     </div>
 
                                     <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-3 rounded-xl border border-slate-100">
-                                      {/* Stylized Simulated QR Code */}
-                                      <div className="flex flex-col items-center space-y-1.5 shrink-0 bg-slate-50 p-2.5 rounded-lg border border-slate-100 shadow-inner">
-                                        <div className="w-[100px] h-[100px] relative bg-white border border-slate-200/60 p-1.5 flex items-center justify-center rounded">
-                                          {/* Scan Corner Markers */}
-                                          <div className="absolute top-1 left-1 w-3.5 h-3.5 border-t-2 border-l-2 border-brand-navy"></div>
-                                          <div className="absolute top-1 right-1 w-3.5 h-3.5 border-t-2 border-r-2 border-brand-navy"></div>
-                                          <div className="absolute bottom-1 left-1 w-3.5 h-3.5 border-b-2 border-l-2 border-brand-navy"></div>
-                                          <div className="absolute bottom-1 right-1 w-3.5 h-3.5 border-b-2 border-r-2 border-brand-navy"></div>
-                                          
-                                          {/* Abstract elegant QR matrix pattern using inline SVG */}
-                                          <svg viewBox="0 0 100 100" className="w-full h-full text-slate-800" fill="currentColor">
-                                            {/* Squares for QR position */}
-                                            <rect x="5" y="5" width="25" height="25" fill="none" stroke="currentColor" strokeWidth="5"></rect>
-                                            <rect x="11" y="11" width="13" height="13"></rect>
-                                            <rect x="70" y="5" width="25" height="25" fill="none" stroke="currentColor" strokeWidth="5"></rect>
-                                            <rect x="76" y="11" width="13" height="13"></rect>
-                                            <rect x="5" y="70" width="25" height="25" fill="none" stroke="currentColor" strokeWidth="5"></rect>
-                                            <rect x="11" y="76" width="13" height="13"></rect>
-                                            {/* Center icon or custom pattern */}
-                                            <circle cx="50" cy="50" r="9" className="text-brand-lime" fill="currentColor"></circle>
-                                            <path d="M 47,50 L 53,50 M 50,47 L 50,53" stroke="black" strokeWidth="2.5"></path>
-                                            {/* Scattered mock pixel data */}
-                                            <rect x="40" y="10" width="6" height="6"></rect>
-                                            <rect x="50" y="5" width="6" height="12"></rect>
-                                            <rect x="60" y="15" width="6" height="6"></rect>
-                                            <rect x="40" y="30" width="12" height="6"></rect>
-                                            <rect x="35" y="40" width="6" height="6"></rect>
-                                            <rect x="60" y="35" width="6" height="12"></rect>
-                                            <rect x="10" y="45" width="6" height="6"></rect>
-                                            <rect x="25" y="50" width="6" height="6"></rect>
-                                            <rect x="15" y="60" width="12" height="6"></rect>
-                                            <rect x="45" y="65" width="6" height="6"></rect>
-                                            <rect x="55" y="70" width="6" height="12"></rect>
-                                            <rect x="40" y="80" width="12" height="6"></rect>
-                                            <rect x="75" y="45" width="12" height="6"></rect>
-                                            <rect x="85" y="55" width="6" height="12"></rect>
-                                            <rect x="70" y="80" width="6" height="10"></rect>
-                                            <rect x="85" y="75" width="10" height="6"></rect>
-                                          </svg>
+                                      {/* Dynamic, Real-time Scannable QR Code */}
+                                      <div className="flex flex-col items-center space-y-1.5 shrink-0 bg-slate-50 p-2 text-center rounded-lg border border-slate-100 shadow-inner">
+                                        <div className="w-[100px] h-[100px] relative bg-white border border-slate-200/60 p-1 flex items-center justify-center rounded overflow-hidden">
+                                          <img 
+                                            src={paymentConfig.usdtQrImage || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent('tron:' + paymentConfig.usdtAddress)}`} 
+                                            alt="USDT TRC20 QR Code" 
+                                            className="w-full h-full object-contain rounded" 
+                                            referrerPolicy="no-referrer"
+                                          />
                                         </div>
-                                        <span className="text-[7.5px] uppercase tracking-widest text-slate-400 font-bold font-mono">Escanea QR</span>
+                                        <span className="text-[7.5px] uppercase tracking-widest text-[#22C55E] font-bold font-mono">Escanea USDT</span>
                                       </div>
 
                                       <div className="space-y-2.5 w-full">
@@ -1436,13 +1675,13 @@ export default function App() {
                                             <input
                                               type="text"
                                               readOnly
-                                              value="TYXauKinGoldTradersTRC20OfficialX888"
+                                              value={paymentConfig.usdtAddress}
                                               className="w-full bg-slate-50 border border-slate-100 rounded-lg py-2 px-3 text-[10px] font-mono text-slate-800 select-all focus:outline-none"
                                             />
                                             <button
                                               type="button"
                                               onClick={() => {
-                                                navigator.clipboard.writeText("TYXauKinGoldTradersTRC20OfficialX888");
+                                                navigator.clipboard.writeText(paymentConfig.usdtAddress);
                                                 setCopiedText("USDT");
                                                 setTimeout(() => setCopiedText(""), 2000);
                                               }}
@@ -1457,76 +1696,46 @@ export default function App() {
                                           </div>
                                         </div>
                                         <p className="text-[8px] uppercase tracking-tight text-slate-400 leading-normal font-mono">
-                                          • Envía exactamente el valor del plan para evitar demoras. La red tarda ~1 a 3 minutos en procesar.
+                                          • Envía exactamente el valor neto correspondiente para evitar demoras en el procesamiento de la licencia.
                                         </p>
                                       </div>
                                     </div>
                                   </div>
-                                )}
-
-                                {paymentMethod === 'BINANCE' && (
+                                ) : (
                                   <div className="space-y-4 animate-[fadeIn_0.2s_ease-out]">
-                                    <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-widest text-slate-400 font-mono">
+                                    <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-widest text-[#E5B800] font-mono">
                                       <span>Binance Pay Directo</span>
-                                      <span className="text-yellow-600 bg-yellow-400/10 border border-yellow-400/20 px-2 py-0.5 rounded text-[8.5px]">Cero Comisión / Instantáneo</span>
+                                      <span className="text-yellow-700 bg-yellow-500/10 border border-yellow-500/20 px-2 py-0.5 rounded text-[8.5px]">Cero Comisión / Instantáneo</span>
                                     </div>
 
                                     <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-3 rounded-xl border border-slate-100">
-                                      {/* Stylized Simulated QR Code */}
-                                      <div className="flex flex-col items-center space-y-1.5 shrink-0 bg-slate-50 p-2.5 rounded-lg border border-slate-100 shadow-inner">
-                                        <div className="w-[100px] h-[100px] relative bg-white border border-slate-200/60 p-1.5 flex items-center justify-center rounded">
-                                          {/* Scan Corner Markers */}
-                                          <div className="absolute top-1 left-1 w-3.5 h-3.5 border-t-2 border-l-2 border-yellow-500"></div>
-                                          <div className="absolute top-1 right-1 w-3.5 h-3.5 border-t-2 border-r-2 border-yellow-500"></div>
-                                          <div className="absolute bottom-1 left-1 w-3.5 h-3.5 border-b-2 border-l-2 border-yellow-500"></div>
-                                          <div className="absolute bottom-1 right-1 w-3.5 h-3.5 border-b-2 border-r-2 border-yellow-500"></div>
-                                          
-                                          {/* Abstract elegant Binance-like QR pattern */}
-                                          <svg viewBox="0 0 100 100" className="w-full h-full text-slate-800" fill="currentColor">
-                                            {/* Squares for QR position */}
-                                            <rect x="5" y="5" width="25" height="25" fill="none" stroke="currentColor" strokeWidth="5"></rect>
-                                            <rect x="11" y="11" width="13" height="13"></rect>
-                                            <rect x="70" y="5" width="25" height="25" fill="none" stroke="currentColor" strokeWidth="5"></rect>
-                                            <rect x="76" y="11" width="13" height="13"></rect>
-                                            <rect x="5" y="70" width="25" height="25" fill="none" stroke="currentColor" strokeWidth="5"></rect>
-                                            <rect x="11" y="76" width="13" height="13"></rect>
-                                            {/* Yellow Binance Diamond Core */}
-                                            <path d="M 50,40 L 60,50 L 50,60 L 40,50 Z" className="text-yellow-500" fill="currentColor"></path>
-                                            {/* Scattered mock pixel data */}
-                                            <rect x="42" y="10" width="6" height="6"></rect>
-                                            <rect x="52" y="5" width="6" height="12"></rect>
-                                            <rect x="62" y="15" width="6" height="6"></rect>
-                                            <rect x="35" y="30" width="12" height="6"></rect>
-                                            <rect x="62" y="35" width="6" height="12"></rect>
-                                            <rect x="12" y="45" width="6" height="6"></rect>
-                                            <rect x="22" y="52" width="6" height="6"></rect>
-                                            <rect x="14" y="62" width="12" height="6"></rect>
-                                            <rect x="42" y="68" width="6" height="6"></rect>
-                                            <rect x="54" y="72" width="6" height="12"></rect>
-                                            <rect x="38" y="82" width="12" height="6"></rect>
-                                            <rect x="72" y="45" width="12" height="6"></rect>
-                                            <rect x="82" y="58" width="6" height="12"></rect>
-                                            <rect x="72" y="82" width="6" height="10"></rect>
-                                            <rect x="82" y="72" width="10" height="6"></rect>
-                                          </svg>
+                                      {/* Dynamic, Real-time Scannable QR Code for Binance Pay */}
+                                      <div className="flex flex-col items-center space-y-1.5 shrink-0 bg-slate-50 p-2 text-center rounded-lg border border-slate-100 shadow-inner">
+                                        <div className="w-[100px] h-[100px] relative bg-white border border-slate-200/60 p-1 flex items-center justify-center rounded overflow-hidden">
+                                          <img 
+                                            src={paymentConfig.binanceQrImage || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(paymentConfig.binancePayId)}`} 
+                                            alt="Binance Pay QR Code" 
+                                            className="w-full h-full object-contain rounded" 
+                                            referrerPolicy="no-referrer"
+                                          />
                                         </div>
                                         <span className="text-[7.5px] uppercase tracking-widest text-[#E5B800] font-bold font-mono">Scan Pay ID</span>
                                       </div>
 
                                       <div className="space-y-2.5 w-full text-slate-800">
                                         <div className="space-y-1">
-                                          <span className="block text-[8px] uppercase tracking-wider text-slate-400 font-extrabold font-mono">Opción 1: Binance Pay ID:</span>
+                                          <span className="block text-[8px] uppercase tracking-wider text-slate-400 font-extrabold font-mono">Binance Pay ID (ID de Binance):</span>
                                           <div className="flex items-center gap-1.5">
                                             <input
                                               type="text"
                                               readOnly
-                                              value="888777123"
+                                              value={paymentConfig.binancePayId}
                                               className="w-full bg-slate-50 border border-slate-100 rounded-lg py-2 px-3 text-[10px] font-mono text-slate-800 select-all focus:outline-none"
                                             />
                                             <button
                                               type="button"
                                               onClick={() => {
-                                                navigator.clipboard.writeText("888777123");
+                                                navigator.clipboard.writeText(paymentConfig.binancePayId);
                                                 setCopiedText("PAYID");
                                                 setTimeout(() => setCopiedText(""), 2000);
                                               }}
@@ -1540,50 +1749,23 @@ export default function App() {
                                             </button>
                                           </div>
                                         </div>
-
-                                        <div className="space-y-1">
-                                          <span className="block text-[8px] uppercase tracking-wider text-slate-400 font-extrabold font-mono">Opción 2: Correo Binance:</span>
-                                          <div className="flex items-center gap-1.5">
-                                            <input
-                                              type="text"
-                                              readOnly
-                                              value="pagos@iaxaukin.com"
-                                              className="w-full bg-slate-50 border border-slate-100 rounded-lg py-1.5 px-2.5 text-[10px] font-mono text-slate-800 select-all focus:outline-none"
-                                            />
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                navigator.clipboard.writeText("pagos@iaxaukin.com");
-                                                setCopiedText("BEMAIL");
-                                                setTimeout(() => setCopiedText(""), 2000);
-                                              }}
-                                              className={`px-2.5 py-1.5 rounded-lg text-[9px] uppercase tracking-wider font-extrabold cursor-pointer transition shrink-0 ${
-                                                copiedText === "BEMAIL" 
-                                                  ? 'bg-emerald-500 text-white' 
-                                                  : 'bg-slate-900 border border-slate-850 text-[#E5B800] hover:bg-black'
-                                              }`}
-                                            >
-                                              {copiedText === "BEMAIL" ? '¡Copiado!' : 'Copiar'}
-                                            </button>
-                                          </div>
-                                        </div>
                                       </div>
                                     </div>
                                   </div>
                                 )}
                               </div>
 
-                              {/* Trazabilidad Information / How verification works */}
-                              <div className="p-3.5 bg-brand-lime/10 border border-brand-lime/20 rounded-2xl space-y-1.5">
-                                <span className="block text-[9px] uppercase tracking-wider text-brand-navy font-black font-mono">
-                                  📊 ¿Cómo funciona la trazabilidad y activación?
+                              {/* Trazabilidad Information / How verification works (Institutional, emoji-free) */}
+                              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                                <span className="block text-[9px] uppercase tracking-wider text-slate-800 font-black font-mono">
+                                  Protocolo Oficial de Verificación e Inicio de Licencia:
                                 </span>
-                                <ul className="text-[8.5px] uppercase font-mono tracking-tight text-slate-600 space-y-1 list-none font-bold">
-                                  <li>• Paga el valor correspondiente a tu membresía.</li>
-                                  <li>• Adjunta la captura de tu pago o pon el código de transacción.</li>
-                                  <li>• Tu solicitud pasa a estado <b className="text-amber-600">PENDIENTE</b> en la base de datos de Firestore.</li>
-                                  <li>• Los administradores verifican el comprobante o el canal financiero.</li>
-                                  <li>• Al aprobarse, tu terminal se activa automáticamente por 30 días.</li>
+                                <ul className="text-[8px] uppercase font-mono tracking-tight text-slate-600 space-y-1.5 list-none font-bold">
+                                  <li>• Realice la transferencia correspondiente al costo neto de la membresía seleccionada.</li>
+                                  <li>• Adjunte la captura de pantalla del comprobante de envío o ingrese el hash de transacción (TXID).</li>
+                                  <li>• La orden registrará un estado PENDIENTE en la base de datos de administración.</li>
+                                  <li>• El área encargada validará el depósito en el menor tiempo posible usando herramientas de explorador TRON o canales de verificación de red.</li>
+                                  <li>• Una vez confirmados los fondos se activará la licencia completa por un plazo estricto de 30 días.</li>
                                 </ul>
                               </div>
 
@@ -1646,16 +1828,10 @@ export default function App() {
                                 )}
                               </div>
 
-                              <div className="relative flex py-1.5 items-center">
-                                <div className="flex-grow border-t border-slate-200/85"></div>
-                                <span className="flex-shrink mx-3 text-[8.5px] uppercase font-bold text-slate-300 font-mono tracking-widest">O si prefieres</span>
-                                <div className="flex-grow border-t border-slate-200/85"></div>
-                              </div>
-
                               <div className="space-y-2">
                                 <label className="block text-[10px] uppercase tracking-wider text-slate-400 font-black font-mono ml-1">
                                   {paymentMethod === 'BINANCE' 
-                                    ? 'Binance Pay ID de Origen / ID de Transacción'
+                                    ? 'ID de Orden / Binance Pay ID de Origen o Comprobante'
                                     : 'ID de Transferencia / Hash de Pago (TXID)'}
                                 </label>
                                 <input
@@ -1665,7 +1841,7 @@ export default function App() {
                                   onChange={(e) => setPaymentTxHash(e.target.value)}
                                   placeholder={
                                     paymentMethod === 'BINANCE'
-                                      ? "Escribe el Binance Pay ID de tu cuenta"
+                                      ? "Ingrese Binance Pay ID o número de comprobante"
                                       : "Escribe el Hash (TXID) de tu transferencia"
                                   }
                                   className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3.5 px-4 text-xs font-mono tracking-widest text-slate-900 placeholder:text-slate-300 focus:outline-none focus:bg-white focus:border-slate-400"
@@ -1791,12 +1967,20 @@ export default function App() {
                         <div className="space-y-2 mb-4">
                           <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-widest text-slate-400 px-1">
                             <div className="flex items-center gap-1.5">
-                              <div className={`w-1.5 h-1.5 rounded-full ${dailyAnalysisCount >= (currentUser.role === 'ADMIN' ? 9999 : (currentUser.plan === 'RETAIL' ? 5 : currentUser.plan === 'PRO' ? 30 : 100)) ? 'bg-red-500 animate-pulse' : 'bg-brand-lime'}`}></div>
-                              <span>Suscripción Activa</span>
+                              <div className={`w-1.5 h-1.5 rounded-full ${
+                                currentUser.role === 'ADMIN' 
+                                  ? 'bg-brand-lime' 
+                                  : currentUser.isTelemetryLimited 
+                                    ? ((currentUser.totalAnalysesCount || 0) >= (currentUser.allowedTotalAnalyses || 3) ? 'bg-red-500 animate-pulse' : 'bg-yellow-500 animate-pulse')
+                                    : (dailyAnalysisCount >= (currentUser.plan === 'RETAIL' ? 5 : currentUser.plan === 'PRO' ? 30 : 100) ? 'bg-red-500 animate-pulse' : 'bg-brand-lime')
+                              }`}></div>
+                              <span>{currentUser.isTelemetryLimited ? 'Prueba de Cortesía' : 'Suscripción Activa'}</span>
                             </div>
                             <span className="font-mono text-slate-500 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-100">
                               {currentUser.role === 'ADMIN' ? (
                                 <span>Operador Admin</span>
+                              ) : currentUser.isTelemetryLimited ? (
+                                <span>Cortesía (3 Scans)</span>
                               ) : (
                                 <span>Socio {currentUser.plan}</span>
                               )}
@@ -1805,10 +1989,12 @@ export default function App() {
                           
                           <div className="bg-slate-50/50 rounded-2xl p-4 border border-slate-100 flex flex-col gap-2">
                             <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-widest text-slate-600">
-                              <span>Créditos de Hoy:</span>
+                              <span>{currentUser.isTelemetryLimited ? 'Consumo de Telemetrías:' : 'Créditos de Hoy:'}</span>
                               <span className="font-mono">
                                 {currentUser.role === 'ADMIN' ? (
                                   <span>ILIMITADO</span>
+                                ) : currentUser.isTelemetryLimited ? (
+                                  <span>{currentUser.totalAnalysesCount || 0} / {currentUser.allowedTotalAnalyses || 3} TELEMETRÍAS</span>
                                 ) : (
                                   <span>{dailyAnalysisCount} / {currentUser.plan === 'RETAIL' ? 5 : currentUser.plan === 'PRO' ? 30 : 100} CONSULTAS</span>
                                 )}
@@ -1816,9 +2002,17 @@ export default function App() {
                             </div>
                             {currentUser.role !== 'ADMIN' && (
                               <div className="text-[9.5px] text-slate-400 normal-case font-medium flex justify-between items-center border-t border-slate-100/60 pt-2">
-                                <span>Capacidad mensual de tu plan:</span>
+                                <span>{currentUser.isTelemetryLimited ? 'Capacidad asignada total:' : 'Capacidad mensual de tu plan:'}</span>
                                 <span className="font-bold text-slate-700 bg-brand-lime/10 text-[9px] px-2 py-0.5 rounded border border-brand-lime/10">
-                                  {currentUser.plan === 'RETAIL' ? "Hasta 150 / Mes" : currentUser.plan === 'PRO' ? "Hasta 900 / Mes" : "Hasta 3,000 / Mes"}
+                                  {currentUser.isTelemetryLimited ? (
+                                    <span>Máximo {currentUser.allowedTotalAnalyses || 3} Escaneos Totales</span>
+                                  ) : currentUser.plan === 'RETAIL' ? (
+                                    "Hasta 150 / Mes"
+                                  ) : currentUser.plan === 'PRO' ? (
+                                    "Hasta 900 / Mes"
+                                  ) : (
+                                    "Hasta 3,000 / Mes"
+                                  )}
                                 </span>
                               </div>
                             )}

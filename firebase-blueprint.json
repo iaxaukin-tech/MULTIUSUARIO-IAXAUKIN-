@@ -15,6 +15,9 @@
         "expiresAt": { "type": "string", "format": "date-time", "description": "Expiration timestamp" },
         "paymentReceiptUrl": { "type": "string", "description": "Transaction HASH code or upload link" },
         "lastAnalysisAt": { "type": "string", "format": "date-time", "description": "Last scan execution timestamp" },
+        "isTelemetryLimited": { "type": "boolean", "description": "Flag indicating if user has a total telemetry count restriction" },
+        "allowedTotalAnalyses": { "type": "integer", "description": "Total number of permitted telemetries/analyses allowed" },
+        "totalAnalysesCount": { "type": "integer", "description": "Historical count of all telemetries/analyses executed for this limit" },
         "dailyUsage": {
           "type": "object",
           "properties": {
@@ -37,7 +40,9 @@
         "durationDays": { "type": "integer", "description": "Day countdown limit" },
         "isUsed": { "type": "boolean", "description": "Whether the code is consumed" },
         "usedBy": { "type": "string", "description": "Username of consuming user" },
-        "createdAt": { "type": "string", "format": "date-time", "description": "Code creation timestamp" }
+        "createdAt": { "type": "string", "format": "date-time", "description": "Code creation timestamp" },
+        "isTelemetryLimited": { "type": "boolean", "description": "Flag indicating if the generated coupon is limited to a fixed count" },
+        "allowedTotalAnalyses": { "type": "integer", "description": "Allowed number of telemetries when using this activation code" }
       },
       "required": ["code", "plan", "durationDays", "isUsed", "createdAt"]
     },
@@ -62,6 +67,18 @@
         "uid": { "type": "string", "description": "UID of the registered owner user" }
       },
       "required": ["uid"]
+    },
+    "PaymentSettings": {
+      "title": "PaymentSettings",
+      "description": "Dynamic payment configurations like TRC20 wallet address and Binance details",
+      "type": "object",
+      "properties": {
+        "usdtAddress": { "type": "string", "description": "The dynamic crypto address for TRC20 USDT payments" },
+        "binancePayId": { "type": "string", "description": "The Binance Pay ID for direct transfer payments" },
+        "binanceEmail": { "type": "string", "format": "email", "description": "The Binance account email to accept transfer payments" },
+        "customMessage": { "type": "string", "description": "An optional custom admin message or instruction on checkout" }
+      },
+      "required": ["usdtAddress", "binancePayId", "binanceEmail"]
     }
   },
   "firestore": {
@@ -80,6 +97,10 @@
     "/usernames/{username}": {
       "schema": "UsernameDocument",
       "description": "Unique registration map to check and claim distinct trader handles"
+    },
+    "/settings/{settingId}": {
+      "schema": "PaymentSettings",
+      "description": "Dynamic core system variables like payment channels"
     }
   }
 }

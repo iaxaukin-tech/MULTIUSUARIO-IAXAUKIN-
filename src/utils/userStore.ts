@@ -136,6 +136,8 @@ export const userStore = {
         const expiry = new Date();
         expiry.setDate(expiry.getDate() + days);
         payload.expiresAt = expiry.toISOString();
+        payload.isTelemetryLimited = deleteField() as any;
+        payload.allowedTotalAnalyses = deleteField() as any;
       } else {
         (payload as any).expiresAt = deleteField();
       }
@@ -186,7 +188,10 @@ export const userStore = {
         const userUpdates: Partial<User> = {
           status: 'ACTIVE',
           plan: codeData.plan,
-          expiresAt: expiry.toISOString()
+          expiresAt: expiry.toISOString(),
+          isTelemetryLimited: codeData.isTelemetryLimited || false,
+          allowedTotalAnalyses: codeData.allowedTotalAnalyses || null,
+          totalAnalysesCount: userData.totalAnalysesCount || 0
         };
         transaction.update(userDocRef, userUpdates);
 
@@ -241,10 +246,16 @@ export const userStore = {
   },
 
   // Admin coupon key generator
-  async generateCode(plan: SubscriptionPlan, durationDays: number): Promise<ActivationCode> {
-    const prefix = plan.substring(0, 4).toUpperCase();
+  async generateCode(
+    plan: SubscriptionPlan, 
+    durationDays: number, 
+    isTelemetryLimited?: boolean, 
+    allowedTotalAnalyses?: number
+  ): Promise<ActivationCode> {
+    const prefix = isTelemetryLimited ? 'TRLS' : plan.substring(0, 4).toUpperCase();
+    const durationLabel = isTelemetryLimited ? `${allowedTotalAnalyses}TEL` : `${durationDays}D`;
     const randomHex = Math.random().toString(36).substring(2, 6).toUpperCase();
-    const codeString = `${prefix}_${durationDays}D_${randomHex}`;
+    const codeString = `${prefix}_${durationLabel}_${randomHex}`;
     
     const path = `activationCodes/${codeString}`;
     const docRef = doc(db, 'activationCodes', codeString);
@@ -256,6 +267,11 @@ export const userStore = {
       isUsed: false,
       createdAt: new Date().toISOString()
     };
+
+    if (isTelemetryLimited) {
+      newCode.isTelemetryLimited = true;
+      newCode.allowedTotalAnalyses = allowedTotalAnalyses;
+    }
 
     try {
       await setDoc(docRef, newCode);
@@ -289,15 +305,18 @@ export const userStore = {
       // Get current user data to check daily limit cache safely
       const userSnap = await getDoc(userDocRef);
       let newCount = 1;
+      let newTotalCount = 1;
       if (userSnap.exists()) {
         const userData = userSnap.data();
         if (userData.dailyUsage && userData.dailyUsage.date === localDateStr) {
           newCount = (userData.dailyUsage.count || 0) + 1;
         }
+        newTotalCount = (userData.totalAnalysesCount || 0) + 1;
       }
 
       await updateDoc(userDocRef, {
         lastAnalysisAt: dateStr,
+        totalAnalysesCount: newTotalCount,
         dailyUsage: {
           date: localDateStr,
           count: newCount
@@ -384,6 +403,70 @@ export const userStore = {
     // For convenience in admin panel
     try {
       await setDoc(doc(db, 'activationCodes', code), { isUsed: true });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, path);
+    }
+  },
+
+  // Get dynamic payment configuration or fallback to owner defaults
+  async getPaymentConfig(): Promise<{ 
+    usdtAddress: string; 
+    binancePayId: string; 
+    binanceEmail: string; 
+    customMessage?: string;
+    usdtQrImage?: string;
+    binanceQrImage?: string;
+  }> {
+    const path = 'settings/payment';
+    const fallback = {
+      usdtAddress: 'TCWAFUsu2iuwkrQyATGKBjdSYczm2pVDGk', // Real owner address supplied in chat
+      binancePayId: '1129008012',
+      binanceEmail: 'pagos@iaxaukin.com',
+      customMessage: 'Envía el monto neto exacto de tu plan. No cubrimos comisiones de retiro de exchanges externos. Tu licencia se activará tras confirmación manual.',
+      usdtQrImage: '',
+      binanceQrImage: ''
+    };
+    
+    try {
+      const snap = await getDoc(doc(db, 'settings', 'payment'));
+      if (snap.exists()) {
+        const data = snap.data();
+        return {
+          usdtAddress: data.usdtAddress || fallback.usdtAddress,
+          binancePayId: data.binancePayId || fallback.binancePayId,
+          binanceEmail: data.binanceEmail || fallback.binanceEmail,
+          customMessage: data.customMessage || fallback.customMessage,
+          usdtQrImage: data.usdtQrImage || '',
+          binanceQrImage: data.binanceQrImage || ''
+        };
+      }
+      return fallback;
+    } catch (err) {
+      console.warn("[IA XAU KIN DB] Error fetching payment config, using fallback defaults:", err);
+      return fallback;
+    }
+  },
+
+  // Update dynamic payment configuration (admin restricted)
+  async updatePaymentConfig(config: { 
+    usdtAddress: string; 
+    binancePayId: string; 
+    binanceEmail: string; 
+    customMessage?: string;
+    usdtQrImage?: string;
+    binanceQrImage?: string;
+  }): Promise<void> {
+    const path = 'settings/payment';
+    try {
+      await setDoc(doc(db, 'settings', 'payment'), {
+        usdtAddress: config.usdtAddress.trim(),
+        binancePayId: config.binancePayId.trim(),
+        binanceEmail: config.binanceEmail.trim(),
+        customMessage: config.customMessage?.trim() || '',
+        usdtQrImage: config.usdtQrImage || '',
+        binanceQrImage: config.binanceQrImage || '',
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
