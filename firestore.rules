@@ -65,6 +65,15 @@ service cloud.firestore {
           )
           && (
             !('lastAnalysisAt' in data) || data.lastAnalysisAt is string
+          )
+          && (
+            !('isTelemetryLimited' in data) || data.isTelemetryLimited is bool
+          )
+          && (
+            !('allowedTotalAnalyses' in data) || (data.allowedTotalAnalyses is int || data.allowedTotalAnalyses == null)
+          )
+          && (
+            !('totalAnalysesCount' in data) || data.totalAnalysesCount is int
           );
       }
 
@@ -100,13 +109,13 @@ service cloud.firestore {
             ) ||
             // Action 2: Activate with Code / Coupon
             (
-              incoming().diff(existing()).affectedKeys().hasOnly(['status', 'plan', 'expiresAt'])
+              incoming().diff(existing()).affectedKeys().hasOnly(['status', 'plan', 'expiresAt', 'isTelemetryLimited', 'allowedTotalAnalyses', 'totalAnalysesCount'])
               && incoming().status == 'ACTIVE'
             ) ||
             // Action 3: Record analysis or update dailyUsage count
             (
-              incoming().diff(existing()).affectedKeys().hasAny(['lastAnalysisAt', 'dailyUsage'])
-              && incoming().diff(existing()).affectedKeys().hasOnly(['lastAnalysisAt', 'dailyUsage'])
+              incoming().diff(existing()).affectedKeys().hasAny(['lastAnalysisAt', 'dailyUsage', 'totalAnalysesCount'])
+              && incoming().diff(existing()).affectedKeys().hasOnly(['lastAnalysisAt', 'dailyUsage', 'totalAnalysesCount'])
             ) ||
             // Action 4: Sync email on login (some verified email flows)
             (

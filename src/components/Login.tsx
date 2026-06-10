@@ -425,7 +425,7 @@ export const Login = ({ onLogin, navigateTo }: LoginProps) => {
             <ShieldCheck size={10} className="text-slate-300" />
             FIRESTORE INTEGRADO
           </div>
-          <div className="font-bold">CUPÓN: KINFREE30</div>
+          <div className="font-bold">SOPORTE ACTIVO</div>
         </div>
 
         {navigateTo && (

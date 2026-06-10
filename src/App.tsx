@@ -1499,7 +1499,7 @@ export default function App() {
                             value={activationCode}
                             onChange={(e) => setActivationCode(e.target.value.toUpperCase())}
                             className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3.5 px-4 text-center text-xs font-mono tracking-widest placeholder:text-slate-300 focus:outline-none focus:bg-white"
-                            placeholder="CÓDIGO DE CUPÓN (Ej: KINFREE30)"
+                            placeholder="CÓDIGO DE ACTIVACIÓN / CUPÓN"
                           />
                         </div>
 
@@ -1522,10 +1522,6 @@ export default function App() {
                           Validar y Activar Membresía
                         </button>
                       </form>
-
-                      <div className="text-[8px] text-slate-400 font-mono">
-                        CÓDIGO DE CUPÓN RECOMENDADO PARA EVALUACIÓN: <b className="text-slate-700 select-all">KINFREE30</b> (30 DÍAS)
-                      </div>
                     </div>
                   )}
 
