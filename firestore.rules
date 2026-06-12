@@ -13,7 +13,7 @@ service cloud.firestore {
     }
 
     function isEmailVerified() {
-      return isSignedIn() && request.auth.token.email_verified == true;
+      return isSignedIn() && request.auth.token.get('email_verified', false) == true;
     }
 
     function isValidId(id) {
@@ -87,7 +87,7 @@ service cloud.firestore {
         && isValidUser(incoming())
         // Restrict role and status self-elevation on initial creation except for verified institutional owner
         && (
-          (request.auth.token.email == 'iaxaukin@gmail.com' && incoming().role == 'ADMIN' && incoming().status == 'ACTIVE')
+          (request.auth.token.get('email', '') == 'iaxaukin@gmail.com' && incoming().role == 'ADMIN' && incoming().status == 'ACTIVE')
           || (incoming().role == 'USER' && incoming().status in ['INACTIVE', 'PENDING_APPROVAL'])
         );
 

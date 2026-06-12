@@ -27,13 +27,15 @@ import {
   AlertCircle,
   CreditCard,
   Wallet,
-  QrCode
+  QrCode,
+  Lock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 import { Login } from './components/Login';
 import { PrivacyPage } from './components/PrivacyPage';
 import { TermsPage } from './components/TermsPage';
+import { PayPalSubscriptionButton } from './components/PayPalSubscriptionButton';
 import { userStore } from './utils/userStore';
 import { User, ActivationCode, SubscriptionPlan, PLAN_DETAILS } from './types';
 import { auth } from './lib/firebase';
@@ -47,6 +49,107 @@ const Logo = ({ className = "" }: { className?: string }) => (
     referrerPolicy="no-referrer"
   />
 );
+
+const getSystemPrompt = (durationMinutes: number) => `Actúa como IA XAU KIN, un Analista Cuantitativo Senior y Estratega Institucional especializado en el mercado XAUUSD. Tu enfoque es puramente basado en datos, modelado de estructura de mercado de alta precisión y gestión de riesgos algorítmica.
+
+Tu tarea es procesar telemetría visual de gráficos (TradingView) para generar matrices operativas estructuradas, coherentes y validadas por la arquitectura del mercado.
+
+---
+
+### 🔍 PROTOCOLO DE ANÁLISIS CUANTITATIVO
+
+Antes de emitir cualquier vector operativo, debes ejecutar el siguiente diagnóstico:
+
+1. **Sincronización Temporal:**
+   - Calibrar la hora actual del activo según el feed visual (última vela/eje temporal).
+   - **PARÁMETRO CRÍTICO:** El modelado debe proyectarse en una **ventana operativa de ${durationMinutes} minutos** (${durationMinutes === 60 ? 'bloque de 1 hora' : 'bloque de 30 minutos'}) desde el punto de origen. Si el timestamp es 12:18 AM, la matriz debe cubrir hasta las ${durationMinutes === 60 ? '01:18 AM' : '12:48 AM'}.
+
+2. **Arquitectura de Mercado:**
+   - Identificar BOS (Break of Structure) con validación de volumen.
+   - Identificar CHoCH (Change of Character) para detección de reversión.
+   - Clasificar el régimen de mercado: Tendencial (Alcista/Bajista) o Lateral (Rango).
+
+3. **Zonas de Interés y Optimización de Probabilidad:**
+   - Calcular vectores de entrada para capturar movimientos de **10 pips (1.0 punto en XAU)** con un ratio de acierto institucional.
+   - Mapear zonas de Supply/Demand, Liquidez Interna/Externa y desequilibrios (FVG).
+
+4. **Dinámica del Precio:**
+   - Analizar rechazos en niveles psicológicos, impulsos de expansión y retrocesos de mitigación.
+
+---
+
+### 🧠 SESGO ALGORÍTMICO (BIAS)
+
+- Estructura Alcista + Mitigación de Demanda → LONG (BUY) 🟢  
+- Estructura Bajista + Mitigación de Oferta → SHORT (SELL) 🔴  
+- Régimen Lateral → Operativa de Reversión en Extremos.
+
+---
+
+### ⏰ MATRIZ DE EJECUCIÓN (BLOQUE DE ${durationMinutes} MIN)
+
+Los timestamps de ejecución no son aleatorios; deben responder a la probabilidad estadística dentro de la ventana de ${durationMinutes} minutos.
+
+Directrices:
+1. Identificar nodos de liquidez para entradas de 10 pips.
+2. REGLAS DE FRECUENCIA:
+   - Orden cronológico estricto.
+   - Distribución no lineal (evitar secuencias uniformes).
+   - Intervalos alternados basados en la volatilidad esperada (ej: 12:24, 12:32, 12:41, 12:55…).
+
+---
+
+### 📊 REPORTE ESTRATÉGICO (FORMATO OBLIGATORIO)
+
+📊 XAUUSD — MATRIZ OPERATIVA INSTITUCIONAL
+
+🕗 Ventana Temporal: (Rango de ${durationMinutes} min en formato 12h AM/PM, ej: 12:18 AM — ${durationMinutes === 60 ? '01:18 AM' : '12:48 AM'})
+
+📉 Tesis de Mercado:
+(Análisis técnico-cuantitativo detallado. Justificación de la probabilidad de captura de 10 pips en la ventana actual)
+
+🔴 Sesgo Estratégico: (LONG 🟢 o SHORT 🔴)
+
+(Generar entre 5 y 7 vectores de entrada con timestamps lógicos, SIEMPRE en formato 12h AM/PM)
+
+Ejemplo:
+
+12:24 AM — SHORT 🔴  
+12:32 AM — SHORT 🔴  
+12:41 AM — SHORT 🔴  
+12:55 AM — SHORT 🔴  
+
+🎯 Target Objetivo: +10 pips (1.0 pt)
+
+---
+
+### ⚠️ Advertencia de Riesgo:
+(Identificar zonas de alta volatilidad, posibles "Stop Hunts" o periodos de baja liquidez)
+
+---
+
+### 📌 Protocolo de Gestión de Capital:
+Deberás redactar esta sección obligatoriamente con el siguiente esquema estructurado de viñetas duras de Markdown:
+* **Selección de Entradas:** Ejecutar un máximo de 2 a 3 vectores de la matriz, priorizando aquellos que coincidan con retrocesos a zonas de desequilibrio (FVG) en el gráfico de 1m.
+* **Stop Loss:** Colocación estricta a 1.5 puntos (15 pips) por debajo del mínimo estructural inmediato de la entrada.
+* **Exposición:** Límite de riesgo estricto entre 0.5% y 1.0% del AUM por operación.
+* **Disciplina:** Ejecución algorítmica fría; una vez alcanzado el target de 10 pips, asegurar parciales o mover a Breakeven. Mantener neutralidad emocional absoluta.
+
+---
+
+### 🚫 RESTRICCIONES DE PROCESAMIENTO
+
+- Prohibido omitir el timestamp de origen del gráfico.
+- Prohibido proyectar fuera de la ventana de ${durationMinutes} minutos.
+- Prioridad absoluta a la tendencia de alta temporalidad para los 10 pips.
+- **FORMATO HORARIO:** Debes utilizar EXCLUSIVAMENTE el formato de 12 horas (AM/PM). Queda terminantemente prohibido el uso de formato de 24 horas (ej: prohibido 14:00, usar 02:00 PM).
+- **RESTRICCIÓN DE EXTENSIÓN:** El reporte completo debe ser altamente denso en información técnica y NO exceder las 500 palabras en total.
+
+---
+
+### 
+
+Tu output debe reflejar la precisión y el rigor de un terminal de trading institucional.`;
 
 const SYSTEM_PROMPT = `Actúa como IA XAU KIN, un Analista Cuantitativo Senior y Estratega Institucional especializado en el mercado XAUUSD. Tu enfoque es puramente basado en datos, modelado de estructura de mercado de alta precisión y gestión de riesgos algorítmica.
 
@@ -149,7 +252,7 @@ Tu output debe reflejar la precisión y el rigor de un terminal de trading insti
 
 // High-fidelity dynamic quantitative simulation engine for Gold (XAUUSD)
 // This is used for trial/demo fallback in static sharing mode to guarantee 100% uptime and premium look-and-feel.
-export function generateSimulatedAnalysis(): string {
+export function generateSimulatedAnalysis(durationMinutes: number = 60): string {
   const now = new Date();
   
   // Format 12h AM/PM with padding for hours < 10
@@ -165,7 +268,7 @@ export function generateSimulatedAnalysis(): string {
   };
 
   const startTimeStr = format12h(now);
-  const endTime = new Date(now.getTime() + 60 * 60 * 1000);
+  const endTime = new Date(now.getTime() + durationMinutes * 60 * 1000);
   const endTimeStr = format12h(endTime);
 
   const biases: ('LONG' | 'SHORT')[] = ['LONG', 'SHORT'];
@@ -174,12 +277,17 @@ export function generateSimulatedAnalysis(): string {
 
   // Generate 5 entries
   const entryTimestamps: string[] = [];
-  let elapsedMinutes = 3 + Math.floor(Math.random() * 5); // start 3-8 in the future
+  let elapsedMinutes = 3 + Math.floor(Math.random() * 3); // start 3-5 in the future for density
 
   for (let i = 0; i < 5; i++) {
     const entryTime = new Date(now.getTime() + elapsedMinutes * 60 * 1000);
-    entryTimestamps.push(format12h(entryTime));
-    elapsedMinutes += 7 + Math.floor(Math.random() * 5); // alternate intervals by 7-12 mins
+    if (elapsedMinutes < durationMinutes) {
+      entryTimestamps.push(format12h(entryTime));
+    }
+    const interval = durationMinutes === 30 
+      ? 4 + Math.floor(Math.random() * 3) // 4-6 minute spacing for 30m
+      : 7 + Math.floor(Math.random() * 5); // 7-12 minute spacing for 60m
+    elapsedMinutes += interval;
   }
 
   const narratives = [
@@ -278,6 +386,7 @@ export default function App() {
   const [loadingAuth, setLoadingAuth] = useState(true);
 
   const [image, setImage] = useState<string | null>(null);
+  const [selectedDuration, setSelectedDuration] = useState<30 | 60>(60);
   const [mimeType, setMimeType] = useState<string>("image/png");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -285,6 +394,13 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+
+  // Safeguard: Lock Básico (RETAIL) users strictly to 60-minute windows on login / plan detection
+  useEffect(() => {
+    if (currentUser && currentUser.plan === 'RETAIL' && !currentUser.isTelemetryLimited) {
+      setSelectedDuration(60);
+    }
+  }, [currentUser]);
 
   // Derive daily usage count dynamically from currentUser to avoid any race condition or state lag
   const dailyAnalysisCount = useMemo(() => {
@@ -307,7 +423,7 @@ export default function App() {
 
   // Checkout Modal State hooks
   const [checkoutPlan, setCheckoutPlan] = useState<SubscriptionPlan | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<'USDT' | 'BTC' | 'SOL' | 'BINANCE' | 'FIAT_COP_PSE'>('USDT');
+  const [paymentMethod, setPaymentMethod] = useState<'USDT' | 'BTC' | 'SOL' | 'BINANCE' | 'FIAT_COP_PSE' | 'PAYPAL'>('USDT');
   const [paymentTxHash, setPaymentTxHash] = useState('');
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState<string | null>(null);
@@ -324,7 +440,7 @@ export default function App() {
   const [paymentConfig, setPaymentConfig] = useState<{
     usdtAddress: string;
     binancePayId: string;
-    binanceEmail: string;
+    binanceEmail?: string;
     customMessage?: string;
     usdtQrImage?: string;
     binanceQrImage?: string;
@@ -516,6 +632,20 @@ export default function App() {
       if (currentUser?.id === userId) {
         setCurrentUser(updatedUser);
       }
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleAdminExtend = async (userId: string, plan: SubscriptionPlan) => {
+    try {
+      const updatedUser = await userStore.updateUserStatus(userId, plan, 'ACTIVE', 30);
+      const fetchedUsers = await userStore.getUsers();
+      setAllUsers(fetchedUsers);
+      if (currentUser?.id === userId) {
+        setCurrentUser(updatedUser);
+      }
+      alert("¡Membresía del trader renovada con éxito por 30 días adicionales!");
     } catch (err: any) {
       alert(err.message);
     }
@@ -742,7 +872,7 @@ export default function App() {
           body: JSON.stringify({
             mimeType,
             base64Data,
-            systemPrompt: SYSTEM_PROMPT
+            systemPrompt: getSystemPrompt(selectedDuration)
           })
         });
 
@@ -799,7 +929,7 @@ export default function App() {
             console.log("[IA XAU KIN Client] Iniciando motor redundante de simulación cuantitativa...");
             // Simulate a premium computation loading delay (1.8 seconds)
             await new Promise(resolve => setTimeout(resolve, 1800));
-            text = generateSimulatedAnalysis();
+            text = generateSimulatedAnalysis(selectedDuration);
           } else {
             throw new Error("SERVER_STATIC_MODE_NO_KEY: El servidor de análisis no está disponible en este enlace compartido (hosting estático). Para procesar tus gráficos de forma local y 100% gratuita, haz clic en el botón 'Clave API' arriba a la derecha y configura tu clave de Gemini personal de Google AI Studio.");
           }
@@ -817,7 +947,7 @@ export default function App() {
             contents: [
               {
                 parts: [
-                  { text: SYSTEM_PROMPT },
+                  { text: getSystemPrompt(selectedDuration) },
                   {
                     inlineData: {
                       mimeType: mimeType,
@@ -1013,6 +1143,100 @@ export default function App() {
                     </div>
                   </section>
 
+                  {/* Sección de Control - Alertas de Cobro y Vencimiento */}
+                  <div className="glass-card rounded-[2rem] p-7 shadow-premium border border-amber-200/40 bg-gradient-to-br from-amber-50/20 to-transparent">
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-rose-100/10 pb-5">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+                          <h3 className="text-lg font-serif italic text-slate-900 font-bold">Resumen de Cobros & Alertas de Vencimiento</h3>
+                        </div>
+                        <p className="text-[9px] uppercase tracking-widest text-slate-400 font-bold">Control de Suscripciones en Tiempo Real</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <span className="flex items-center gap-1 bg-blue-500/10 text-blue-700 border border-blue-500/20 rounded-md px-2.5 py-1 text-[8px] font-black uppercase tracking-wider">
+                          💳 PayPal: Cobro Recurrente Auto
+                        </span>
+                        <span className="flex items-center gap-1 bg-amber-500/10 text-amber-700 border border-amber-500/20 rounded-md px-2.5 py-1 text-[8px] font-black uppercase tracking-wider">
+                          ⚠️ Manual (USDT/Binance): Requiere Seguimiento
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-5">
+                      {/* PayPal Recurrente Confirmacion */}
+                      <div className="space-y-3 bg-slate-50/80 p-5 rounded-2xl border border-slate-100">
+                        <div className="flex items-center gap-1.5 text-[9.5px] font-black text-blue-700 uppercase tracking-wider">
+                          <CreditCard size={12} /> Confirmación de cobro automático
+                        </div>
+                        <p className="text-[10px] leading-relaxed text-slate-600">
+                          <b>¡Confirmado!</b> Dado que el botón de PayPal de la plataforma utiliza <code>vault=true</code> e <code>intent="subscription"</code>, **PayPal ejecutará los cobros automáticamente a la tarjeta de tus clientes cada 30 días**. No necesitas solicitar renovaciones para los traders de PayPal; su cobro es enteramente automatizado en el sistema de PayPal.
+                        </p>
+                        <div className="text-[8px] text-slate-400 font-mono flex items-center gap-1">
+                          ● Pasarela PayPal gestiona el débito automático • No se requiere acción manual.
+                        </div>
+                      </div>
+
+                      {/* Alertas de Vencimiento de Usuarios */}
+                      <div className="space-y-3 bg-slate-50/80 p-5 rounded-2xl border border-slate-100">
+                        <div className="flex items-center gap-1.5 text-[9.5px] font-black text-amber-600 uppercase tracking-wider">
+                          <AlertTriangle size={12} /> Próximos a vencer (Siguientes 5 días)
+                        </div>
+                        {allUsers.filter(u => {
+                          if (u.role === 'ADMIN' || u.status !== 'ACTIVE' || !u.expiresAt) return false;
+                          const diffTime = new Date(u.expiresAt).getTime() - Date.now();
+                          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                          return diffDays <= 5;
+                        }).length === 0 ? (
+                          <div className="text-[10px] text-slate-500 italic py-4 text-center">
+                            No hay traders activos próximos a vencer en los siguientes 5 días.
+                          </div>
+                        ) : (
+                          <div className="max-h-[140px] overflow-y-auto space-y-2 pr-1.5">
+                            {allUsers.filter(u => {
+                              if (u.role === 'ADMIN' || u.status !== 'ACTIVE' || !u.expiresAt) return false;
+                              const diffTime = new Date(u.expiresAt).getTime() - Date.now();
+                              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                              return diffDays <= 5;
+                            }).map(u => {
+                              const diffTime = new Date(u.expiresAt!).getTime() - Date.now();
+                              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                              const isPaypal = u.paymentReceiptUrl?.startsWith('PAYPAL_SUSB_ID:');
+                              return (
+                                <div key={u.id} className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-slate-100 text-[9.5px] shadow-sm">
+                                  <div>
+                                    <div className="font-mono font-bold text-slate-800">@{u.username}</div>
+                                    <div className="text-[8px] text-slate-400 block mt-0.5">{u.email}</div>
+                                    {isPaypal ? (
+                                      <span className="text-[7px] text-blue-600 font-black bg-blue-50 border border-blue-100 rounded px-1 mt-1 inline-block uppercase font-mono tracking-wider">
+                                        💳 PayPal (Autorrenovación)
+                                      </span>
+                                    ) : (
+                                      <span className="text-[7px] text-amber-600 font-black bg-amber-50 border border-amber-100 rounded px-1 mt-1 inline-block uppercase font-mono tracking-wider">
+                                        ⚠️ Manual (USDT/Binance)
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-right space-y-1 ml-2">
+                                    <span className={`block font-mono font-bold text-[8.5px] ${diffDays <= 0 ? 'text-rose-500' : 'text-amber-600'}`}>
+                                      {diffDays <= 0 ? '🚨 Expirado' : `⏰ En ${diffDays} d`}
+                                    </span>
+                                    <button
+                                      onClick={() => handleAdminExtend(u.id, u.plan)}
+                                      className="bg-slate-900 border border-slate-900 hover:bg-brand-lime hover:text-slate-900 hover:border-brand-lime text-brand-lime font-bold px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider transition-colors cursor-pointer"
+                                    >
+                                      Renovar +30d
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Columns for User DB management and Code Generator */}
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                     
@@ -1038,97 +1262,220 @@ export default function App() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-50">
-                            {allUsers.map((user) => (
-                              <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
-                                <td className="py-4 pl-2">
-                                  <div className="font-bold text-slate-800 flex items-center gap-1.5 leading-none">
-                                    <span className="font-mono">@{user.username}</span>
-                                    {user.role === 'ADMIN' && (
-                                      <span className="bg-slate-950 text-white rounded px-1 py-0.5 text-[7px] font-bold tracking-widest scale-95 origin-left">ADMIN</span>
-                                    )}
-                                  </div>
-                                  <span className="text-[10px] text-slate-400 block mt-1">{user.email}</span>
-                                </td>
-                                <td className="py-4">
-                                  <span className={`px-2 py-0.5 text-[8.5px] font-extrabold uppercase rounded-lg tracking-wider ${PLAN_DETAILS[user.plan]?.bgColor || 'bg-slate-100'} ${PLAN_DETAILS[user.plan]?.color === 'brand-lime' ? 'text-slate-900 border border-brand-lime/20 bg-brand-lime/10' : 'text-slate-700'}`}>
-                                    {user.plan}
-                                  </span>
-                                </td>
-                                <td className="py-4">
-                                  {user.status === 'ACTIVE' ? (
-                                    <span className="text-emerald-600 font-bold text-[9px] uppercase tracking-widest flex items-center gap-1">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Activo
+                            {allUsers.map((user) => {
+                              const isPaypal = user.paymentReceiptUrl?.startsWith('PAYPAL_SUSB_ID:');
+                              const diffDays = user.expiresAt 
+                                ? Math.ceil((new Date(user.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+                                : null;
+                              const isExpiringSoon = user.status === 'ACTIVE' && diffDays !== null && diffDays >= 0 && diffDays <= 5;
+
+                              return (
+                                <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
+                                  <td className="py-4 pl-2">
+                                    <div className="font-bold text-slate-800 flex items-center gap-1.5 leading-none flex-wrap">
+                                      <span className="font-mono">@{user.username}</span>
+                                      {user.role === 'ADMIN' && (
+                                        <span className="bg-slate-950 text-white rounded px-1 py-0.5 text-[7px] font-bold tracking-widest scale-95 origin-left">ADMIN</span>
+                                      )}
+                                      {isPaypal && (
+                                        <span className="bg-blue-500/10 text-blue-600 rounded px-1.5 py-0.5 text-[7px] font-black tracking-wider uppercase font-mono border border-blue-500/10">
+                                          💳 PAYPAL
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-[10px] text-slate-400 block mt-1">{user.email}</span>
+                                  </td>
+                                  <td className="py-4">
+                                    <span className={`px-2 py-0.5 text-[8.5px] font-extrabold uppercase rounded-lg tracking-wider ${PLAN_DETAILS[user.plan]?.bgColor || 'bg-slate-100'} ${PLAN_DETAILS[user.plan]?.color === 'brand-lime' ? 'text-slate-900 border border-brand-lime/20 bg-brand-lime/10' : 'text-slate-700'}`}>
+                                      {user.plan}
                                     </span>
-                                  ) : user.status === 'PENDING_APPROVAL' ? (
-                                    <span className="text-amber-500 font-extrabold text-[9px] uppercase tracking-widest flex items-center gap-1 animate-pulse">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Pendiente
-                                    </span>
-                                  ) : (
-                                    <span className="text-slate-400 font-bold text-[9px] uppercase tracking-widest flex items-center gap-1">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-slate-200" /> Inactivo
-                                    </span>
-                                  )}
-                                  {user.expiresAt && (
-                                    <span className="text-[8px] text-slate-400 block font-mono mt-0.5">Expira: {new Date(user.expiresAt).toLocaleDateString()}</span>
-                                  )}
-                                </td>
-                                <td className="py-4 font-mono text-[9.5px]">
-                                  {user.paymentReceiptUrl ? (
-                                    user.paymentReceiptUrl.startsWith('data:image') ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => setAdminLightboxImage(user.paymentReceiptUrl!)}
-                                        className="text-white bg-slate-900 border border-slate-800 hover:bg-slate-800 px-2 py-1.5 rounded-[6px] font-extrabold block w-full max-w-[124px] cursor-pointer text-center text-[8px] font-sans uppercase transition-colors"
-                                      >
-                                        📷 Ver Captura
-                                      </button>
-                                    ) : (
-                                      <span 
-                                        className="text-brand-lime bg-slate-950 px-2 py-1.5 rounded-[6px] font-bold block max-w-[124px] truncate cursor-pointer hover:bg-slate-900 border border-brand-lime/20 text-center text-[8.5px]" 
-                                        title={user.paymentReceiptUrl}
-                                        onClick={() => {
-                                          if (user.paymentReceiptUrl) {
-                                            navigator.clipboard.writeText(user.paymentReceiptUrl);
-                                          }
-                                        }}
-                                      >
-                                        HASH: {user.paymentReceiptUrl.substring(0, 10)}...
+                                  </td>
+                                  <td className="py-4">
+                                    {user.status === 'ACTIVE' ? (
+                                      <span className="text-emerald-600 font-bold text-[9px] uppercase tracking-widest flex items-center gap-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Activo
                                       </span>
-                                    )
-                                  ) : (
-                                    <span className="text-slate-300 italic">—</span>
-                                  )}
-                                </td>
-                                <td className="py-4 text-right pr-2">
-                                  <div className="flex justify-end gap-2">
-                                    {user.status === 'PENDING_APPROVAL' && (
-                                      <button
-                                        onClick={() => handleAdminApprove(user.id, user.plan)}
-                                        className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-2.5 py-1.5 rounded-lg text-[9px] uppercase tracking-wider shadow-sm transition-all shadow-emerald-100"
-                                      >
-                                        Aprobar Pago
-                                      </button>
+                                    ) : user.status === 'PENDING_APPROVAL' ? (
+                                      <span className="text-amber-500 font-extrabold text-[9px] uppercase tracking-widest flex items-center gap-1 animate-pulse">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Pendiente
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400 font-bold text-[9px] uppercase tracking-widest flex items-center gap-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-slate-200" /> Inactivo
+                                      </span>
                                     )}
-                                    {user.status === 'ACTIVE' && user.role !== 'ADMIN' && (
-                                      <button
-                                        onClick={() => handleAdminSuspend(user.id)}
-                                        className="bg-red-50 hover:bg-red-100 border border-red-100 text-red-500 font-bold px-2 py-1.5 rounded-lg text-[9px] uppercase tracking-wider transition-all"
-                                      >
-                                        Suspender
-                                      </button>
+                                    {user.expiresAt && (
+                                      <span className="text-[8px] text-slate-400 block font-mono mt-0.5">Expira: {new Date(user.expiresAt).toLocaleDateString()}</span>
                                     )}
-                                    {user.status === 'INACTIVE' && (
-                                      <button
-                                        onClick={() => handleAdminApprove(user.id, 'PRO')}
-                                        className="bg-slate-900 text-brand-lime hover:bg-slate-800 font-bold px-2.5 py-1.5 rounded-lg text-[9px] uppercase tracking-wider transition-all"
-                                      >
-                                        Activar PRO
-                                      </button>
+                                    {isExpiringSoon && (
+                                      <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-700 border border-amber-500/15 rounded px-1.5 py-0.5 text-[6.5px] font-black uppercase tracking-wider mt-1 w-fit animate-pulse font-mono">
+                                        ⚠️ Vence en {diffDays}d
+                                      </span>
                                     )}
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
+                                    {user.status === 'ACTIVE' && diffDays !== null && diffDays < 0 && (
+                                      <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-700 border border-rose-500/15 rounded px-1.5 py-0.5 text-[6.5px] font-black uppercase tracking-wider mt-1 w-fit font-mono">
+                                        🚨 EXPIRADO
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-4 font-mono text-[9.5px]">
+                                    {isPaypal ? (
+                                      <span className="text-blue-600 bg-blue-50/50 px-2.5 py-1.5 rounded-[6px] font-black block max-w-[124px] border border-blue-500/10 text-center text-[8px] uppercase tracking-wide">
+                                        Suscripción Autopago
+                                      </span>
+                                    ) : user.paymentReceiptUrl ? (
+                                      user.paymentReceiptUrl.startsWith('data:image') ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => setAdminLightboxImage(user.paymentReceiptUrl!)}
+                                          className="text-white bg-slate-900 border border-slate-800 hover:bg-slate-800 px-2 py-1.5 rounded-[6px] font-extrabold block w-full max-w-[124px] cursor-pointer text-center text-[8px] font-sans uppercase transition-colors"
+                                        >
+                                          📷 Ver Captura
+                                        </button>
+                                      ) : (
+                                        <span 
+                                          className="text-brand-lime bg-slate-950 px-2 py-1.5 rounded-[6px] font-bold block max-w-[124px] truncate cursor-pointer hover:bg-slate-900 border border-brand-lime/20 text-center text-[8.5px]" 
+                                          title={user.paymentReceiptUrl}
+                                          onClick={() => {
+                                            if (user.paymentReceiptUrl) {
+                                              navigator.clipboard.writeText(user.paymentReceiptUrl);
+                                            }
+                                          }}
+                                        >
+                                          HASH: {user.paymentReceiptUrl.substring(0, 10)}...
+                                        </span>
+                                      )
+                                    ) : (
+                                      <span className="text-slate-300 italic">—</span>
+                                    )}
+                                  </td>
+                                  <td className="py-4 text-right pr-2">
+                                    <div className="flex justify-end gap-1.5 flex-wrap">
+                                      {user.status === 'PENDING_APPROVAL' && (
+                                        <div className="flex flex-col gap-1 items-end w-full max-w-[170px]">
+                                          <button
+                                            onClick={() => handleAdminApprove(user.id, user.plan)}
+                                            className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-2.5 py-1.5 rounded-lg text-[8.5px] uppercase tracking-wider shadow-sm transition-all text-center w-full"
+                                            title={`Aprobar plan predeterminado: ${user.plan}`}
+                                          >
+                                            Aprobar {user.plan} ✓
+                                          </button>
+                                          <div className="flex gap-1 justify-end w-full">
+                                            {user.plan !== 'RETAIL' && (
+                                              <button
+                                                onClick={() => handleAdminApprove(user.id, 'RETAIL')}
+                                                className="text-[7.5px] bg-slate-50 hover:bg-slate-100 text-slate-500 border border-slate-200 px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold"
+                                                title="Aprobar como Básico (RETAIL)"
+                                              >
+                                                + RETAIL
+                                              </button>
+                                            )}
+                                            {user.plan !== 'PRO' && (
+                                              <button
+                                                onClick={() => handleAdminApprove(user.id, 'PRO')}
+                                                className="text-[7.5px] bg-slate-100/80 hover:bg-slate-200 text-slate-800 border border-slate-200 px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold"
+                                                title="Aprobar como PRO"
+                                              >
+                                                + PRO
+                                              </button>
+                                            )}
+                                            {user.plan !== 'INSTITUTIONAL' && (
+                                              <button
+                                                onClick={() => handleAdminApprove(user.id, 'INSTITUTIONAL')}
+                                                className="text-[7.5px] bg-slate-50 hover:bg-slate-100 text-slate-500 border border-slate-200 px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold"
+                                                title="Aprobar como Institucional"
+                                              >
+                                                + INST.
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+                                      {user.status === 'ACTIVE' && user.role !== 'ADMIN' && (
+                                        <div className="flex flex-col gap-1 items-end w-full max-w-[170px]">
+                                          <div className="flex gap-1 w-full justify-end">
+                                            <button
+                                              onClick={() => handleAdminExtend(user.id, user.plan)}
+                                              className="bg-brand-lime text-slate-900 hover:bg-white border border-brand-lime/30 font-extrabold px-2 py-1.5 rounded-lg text-[8.5px] uppercase tracking-wider transition-all flex-1 text-center"
+                                              title={`Renovar ${user.plan} por +30 días`}
+                                            >
+                                              +30 Días
+                                            </button>
+                                            <button
+                                              onClick={() => handleAdminSuspend(user.id)}
+                                              className="bg-red-50 hover:bg-red-100 border border-red-100 text-red-500 font-bold px-2 py-1.5 rounded-lg text-[8.5px] uppercase tracking-wider transition-all"
+                                            >
+                                              Suspender
+                                            </button>
+                                          </div>
+                                          {/* Permitir cambiar el plan del usuario activo directamente */}
+                                          <div className="flex gap-1 justify-end w-full">
+                                            {user.plan !== 'RETAIL' && (
+                                              <button
+                                                onClick={() => handleAdminApprove(user.id, 'RETAIL')}
+                                                className="text-[7px] bg-slate-50 hover:bg-slate-100 text-slate-400 border border-slate-200/60 px-1 py-0.5 rounded uppercase font-semibold"
+                                                title="Cambiar plan a Básico (RETAIL)"
+                                              >
+                                                Cambiar a RETAIL
+                                              </button>
+                                            )}
+                                            {user.plan !== 'PRO' && (
+                                              <button
+                                                onClick={() => handleAdminApprove(user.id, 'PRO')}
+                                                className="text-[7px] bg-slate-50 hover:bg-slate-100 text-slate-400 border border-slate-200/60 px-1 py-0.5 rounded uppercase font-semibold"
+                                                title="Cambiar plan a PRO"
+                                              >
+                                                Cambiar a PRO
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+                                      {user.status === 'INACTIVE' && (
+                                        <div className="flex flex-col gap-1 items-end w-full max-w-[170px]">
+                                          <button
+                                            onClick={() => handleAdminApprove(user.id, user.plan)}
+                                            className="bg-slate-900 text-brand-lime hover:bg-slate-800 font-bold px-2.5 py-1.5 rounded-lg text-[8.5px] uppercase tracking-wider transition-all text-center w-full"
+                                            title={`Activar con plan registrado por defecto: ${user.plan}`}
+                                          >
+                                            Activar {user.plan}
+                                          </button>
+                                          <div className="flex gap-1 justify-end w-full">
+                                            {user.plan !== 'RETAIL' && (
+                                              <button
+                                                onClick={() => handleAdminApprove(user.id, 'RETAIL')}
+                                                className="text-[7.5px] bg-slate-50 hover:bg-slate-100 text-slate-500 border border-slate-200 px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold"
+                                                title="Activar como Básico (RETAIL)"
+                                              >
+                                                + RETAIL
+                                              </button>
+                                            )}
+                                            {user.plan !== 'PRO' && (
+                                              <button
+                                                onClick={() => handleAdminApprove(user.id, 'PRO')}
+                                                className="text-[7.5px] bg-slate-100/80 hover:bg-slate-200 text-slate-800 border border-slate-200 px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold"
+                                                title="Activar como PRO"
+                                              >
+                                                + PRO
+                                              </button>
+                                            )}
+                                            {user.plan !== 'INSTITUTIONAL' && (
+                                              <button
+                                                onClick={() => handleAdminApprove(user.id, 'INSTITUTIONAL')}
+                                                className="text-[7.5px] bg-slate-50 hover:bg-slate-100 text-slate-500 border border-slate-200 px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold"
+                                                title="Activar como Institucional"
+                                              >
+                                                + INST.
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -1150,9 +1497,9 @@ export default function App() {
                               onChange={(e) => setNewCodePlan(e.target.value as SubscriptionPlan)}
                               className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3 px-3.5 text-xs text-slate-900 focus:outline-none"
                             >
-                              <option value="RETAIL">RETAIL (Básico)</option>
-                              <option value="PRO">PRO (Recomendado)</option>
-                              <option value="INSTITUTIONAL">INSTITUTIONAL (Senior)</option>
+                              <option value="RETAIL">BÁSICO</option>
+                              <option value="PRO">PRO</option>
+                              <option value="INSTITUTIONAL">INSTITUCIONAL</option>
                             </select>
                           </div>
 
@@ -1303,18 +1650,6 @@ export default function App() {
                               value={paymentConfig.binancePayId}
                               onChange={(e) => setPaymentConfig(prev => ({ ...prev, binancePayId: e.target.value }))}
                               placeholder="Ej: 888777123"
-                              className="w-full bg-slate-50 border border-slate-100 rounded-xl py-2.5 px-3.5 text-[10.5px] font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#E5B800]"
-                            />
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block font-mono">Correo Binance Account</label>
-                            <input
-                              type="email"
-                              required
-                              value={paymentConfig.binanceEmail}
-                              onChange={(e) => setPaymentConfig(prev => ({ ...prev, binanceEmail: e.target.value }))}
-                              placeholder="Ej: pagos@iaxaukin.com"
                               className="w-full bg-slate-50 border border-slate-100 rounded-xl py-2.5 px-3.5 text-[10.5px] font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#E5B800]"
                             />
                           </div>
@@ -1611,263 +1946,336 @@ export default function App() {
                             </div>
                           ) : (
                             // Retail & Pro Checkout View
-                            <form onSubmit={handleRegisterPayment} className="space-y-4">
+                            <div className="space-y-4">
                               {/* Horizontal Payment Method Tabs */}
-                              <div className="flex gap-1.5 border-b border-slate-100 pb-2">
+                              <div className="grid grid-cols-3 gap-1 sm:gap-1.5 border-b border-slate-100 pb-2">
                                 {[
                                   { id: 'USDT', label: 'USDT (TRC20)', icon: Coins },
-                                  { id: 'BINANCE', label: 'Binance Pay', icon: QrCode }
+                                  { id: 'BINANCE2', label: 'Binance Pay', icon: QrCode },
+                                  { id: 'PAYPAL', label: 'PayPal', icon: CreditCard }
                                 ].map((tab) => {
+                                  // Map 'BINANCE2' tab to 'BINANCE' state
+                                  const isActive = (tab.id === 'BINANCE2' && paymentMethod === 'BINANCE') || paymentMethod === tab.id;
                                   const IconComponent = tab.icon;
-                                  const isActive = paymentMethod === tab.id;
                                   return (
                                     <button
                                       key={tab.id}
                                       type="button"
                                       onClick={() => {
-                                        setPaymentMethod(tab.id as any);
+                                        setPaymentMethod(tab.id === 'BINANCE2' ? 'BINANCE' : tab.id as any);
                                         setPaymentError(null);
                                       }}
-                                      className={`flex items-center gap-1.5 px-4 py-2 text-[10px] uppercase tracking-wider font-extrabold rounded-lg cursor-pointer transition ${
+                                      className={`flex items-center justify-center gap-1 px-1.5 py-2 text-[8px] sm:text-[10px] uppercase tracking-wider font-extrabold rounded-lg cursor-pointer transition text-center ${
                                         isActive 
                                           ? 'bg-slate-900 border border-slate-800 text-brand-lime' 
                                           : 'bg-slate-50 border border-slate-100 text-slate-500 hover:bg-slate-100'
                                       }`}
                                     >
-                                      <IconComponent size={12} className={isActive ? 'text-brand-lime' : 'text-slate-400'} />
-                                      {tab.label}
+                                      <IconComponent size={11} className={isActive ? 'text-brand-lime shrink-0' : 'text-slate-400 shrink-0'} />
+                                      <span className="truncate">{tab.label}</span>
                                     </button>
                                   );
                                 })}
                               </div>
 
-                              {/* Dynamic Payment Method Instruction Box */}
-                              <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-4">
-                                {paymentMethod === 'USDT' ? (
-                                  <div className="space-y-4 animate-[fadeIn_0.2s_ease-out]">
-                                    <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-widest text-[#22C55E] font-mono">
-                                      <span>Red de Pago USDT</span>
-                                      <span className="text-emerald-700 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded text-[8.5px]">TRC20 (Red TRON)</span>
+                              {paymentMethod === 'PAYPAL' ? (
+                                <div className="space-y-4">
+                                  {paymentError && (
+                                    <div className="p-3.5 bg-red-50 border border-red-100 text-red-500 text-[10.5px] font-semibold rounded-xl uppercase tracking-wider">
+                                      {paymentError}
                                     </div>
+                                  )}
 
-                                    <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-3 rounded-xl border border-slate-100">
-                                      {/* Dynamic, Real-time Scannable QR Code */}
-                                      <div className="flex flex-col items-center space-y-1.5 shrink-0 bg-slate-50 p-2 text-center rounded-lg border border-slate-100 shadow-inner">
-                                        <div className="w-[100px] h-[100px] relative bg-white border border-slate-200/60 p-1 flex items-center justify-center rounded overflow-hidden">
-                                          <img 
-                                            src={paymentConfig.usdtQrImage || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent('tron:' + paymentConfig.usdtAddress)}`} 
-                                            alt="USDT TRC20 QR Code" 
-                                            className="w-full h-full object-contain rounded" 
-                                            referrerPolicy="no-referrer"
-                                          />
-                                        </div>
-                                        <span className="text-[7.5px] uppercase tracking-widest text-[#22C55E] font-bold font-mono">Escanea USDT</span>
-                                      </div>
+                                  {paymentSuccess && (
+                                    <div className="p-3.5 bg-emerald-50 border border-emerald-100 text-emerald-600 text-[10.5px] font-semibold rounded-xl uppercase tracking-wider animate-pulse">
+                                      {paymentSuccess}
+                                    </div>
+                                  )}
 
-                                      <div className="space-y-2.5 w-full">
-                                        <div className="space-y-1">
-                                          <span className="block text-[8px] uppercase tracking-wider text-slate-400 font-extrabold font-mono">Dirección USDT (TRC20):</span>
-                                          <div className="flex items-center gap-1.5">
-                                            <input
-                                              type="text"
-                                              readOnly
-                                              value={paymentConfig.usdtAddress}
-                                              className="w-full bg-slate-50 border border-slate-100 rounded-lg py-2 px-3 text-[10px] font-mono text-slate-800 select-all focus:outline-none"
-                                            />
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                navigator.clipboard.writeText(paymentConfig.usdtAddress);
-                                                setCopiedText("USDT");
-                                                setTimeout(() => setCopiedText(""), 2000);
-                                              }}
-                                              className={`px-3 py-2 rounded-lg text-[9px] uppercase tracking-wider font-extrabold cursor-pointer transition shrink-0 ${
-                                                copiedText === "USDT" 
-                                                  ? 'bg-emerald-500 text-white' 
-                                                  : 'bg-slate-900 border border-slate-850 text-brand-lime hover:bg-black'
-                                              }`}
-                                            >
-                                              {copiedText === "USDT" ? '¡Copiado!' : 'Copiar'}
-                                            </button>
-                                          </div>
+                                  {(checkoutPlan === 'RETAIL' || checkoutPlan === 'PRO') ? (
+                                    <div className="space-y-4 animate-[fadeIn_0.2s_ease-out]">
+                                      <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-3">
+                                        <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-widest text-slate-900 font-mono">
+                                          <span>Suscripción Segura de PayPal</span>
+                                          <span className="text-emerald-700 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded text-[8.5px]">Cifrado SSL / Pago Recurrente</span>
                                         </div>
-                                        <p className="text-[8px] uppercase tracking-tight text-slate-400 leading-normal font-mono">
-                                          • Envía exactamente el valor neto correspondiente para evitar demoras en el procesamiento de la licencia.
+                                        <p className="text-[10px] text-slate-500 leading-relaxed">
+                                          Utiliza el botón de PayPal para suscribirte a la membresía <b>{checkoutPlan === 'RETAIL' ? 'Básica (Socio Básico)' : 'Avanzada (Socio Pro)'}</b> de manera automática por tan solo <b>{checkoutPlan === 'RETAIL' ? '$29.00 USD' : '$79.00 USD'}</b> al mes. Puedes cancelar cuando quieras directamente desde tu panel de PayPal.
                                         </p>
                                       </div>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="space-y-4 animate-[fadeIn_0.2s_ease-out]">
-                                    <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-widest text-[#E5B800] font-mono">
-                                      <span>Binance Pay Directo</span>
-                                      <span className="text-yellow-700 bg-yellow-500/10 border border-yellow-500/20 px-2 py-0.5 rounded text-[8.5px]">Cero Comisión / Instantáneo</span>
-                                    </div>
 
-                                    <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-3 rounded-xl border border-slate-100">
-                                      {/* Dynamic, Real-time Scannable QR Code for Binance Pay */}
-                                      <div className="flex flex-col items-center space-y-1.5 shrink-0 bg-slate-50 p-2 text-center rounded-lg border border-slate-100 shadow-inner">
-                                        <div className="w-[100px] h-[100px] relative bg-white border border-slate-200/60 p-1 flex items-center justify-center rounded overflow-hidden">
-                                          <img 
-                                            src={paymentConfig.binanceQrImage || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(paymentConfig.binancePayId)}`} 
-                                            alt="Binance Pay QR Code" 
-                                            className="w-full h-full object-contain rounded" 
-                                            referrerPolicy="no-referrer"
-                                          />
+                                      <PayPalSubscriptionButton 
+                                        clientId="BAA-Qyr9jMnnpjjCeqy_wmkaWooAqWlZD_H63OIR9znYei195dD7E3Eq0sjapP7OHxH6UmADRjn9wZf3Vc"
+                                        planId={checkoutPlan === 'RETAIL' ? 'P-6U703114N8775584UNIU4K7Y' : 'P-022706311G490222MNIU4USY'}
+                                        onSuccess={async (subscriptionId) => {
+                                          setIsSubmittingPayment(true);
+                                          setPaymentError(null);
+                                          try {
+                                            const updatedUser = await userStore.submitPaymentReceipt(
+                                              currentUser.id,
+                                              checkoutPlan,
+                                              `PAYPAL_SUSB_ID:${subscriptionId}`
+                                            );
+                                            setCurrentUser(updatedUser);
+                                            setPaymentSuccess(`¡Suscripción de PayPal autorizada con éxito (ID: ${subscriptionId})! Esperando activación muy rápida de administración.`);
+                                            setTimeout(() => {
+                                              setCheckoutPlan(null);
+                                              setPaymentTxHash('');
+                                              setPaymentSuccess(null);
+                                            }, 6000);
+                                          } catch (err: any) {
+                                            setPaymentError('Transacción autorizada de PayPal, pero ocurrió un error guardándola en tu cuenta: ' + err.message);
+                                          } finally {
+                                            setIsSubmittingPayment(false);
+                                          }
+                                        }}
+                                        onError={(err) => {
+                                          setPaymentError(err);
+                                        }}
+                                      />
+                                    </div>
+                                  ) : (
+                                    <div className="p-4 text-center space-y-2 bg-slate-50 border border-slate-100 rounded-2xl">
+                                      <p className="text-xs text-slate-600 font-medium font-sans">
+                                        Las suscripciones automatizadas con PayPal están únicamente integradas para la <b>Membresía Básica (Socio Básico)</b>.
+                                      </p>
+                                      <p className="text-[10px] text-slate-400 font-sans">
+                                        Por favor use USDT o Binance Pay para adquirir el plan Socio Pro, o contacte a gerencia administrativa.
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <form onSubmit={handleRegisterPayment} className="space-y-4">
+                                  {/* Dynamic Payment Method Instruction Box */}
+                                  <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-4">
+                                    {paymentMethod === 'USDT' ? (
+                                      <div className="space-y-4 animate-[fadeIn_0.2s_ease-out]">
+                                        <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-widest text-[#22C55E] font-mono">
+                                          <span>Red de Pago USDT</span>
+                                          <span className="text-emerald-700 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded text-[8.5px]">TRC20 (Red TRON)</span>
                                         </div>
-                                        <span className="text-[7.5px] uppercase tracking-widest text-[#E5B800] font-bold font-mono">Scan Pay ID</span>
-                                      </div>
 
-                                      <div className="space-y-2.5 w-full text-slate-800">
-                                        <div className="space-y-1">
-                                          <span className="block text-[8px] uppercase tracking-wider text-slate-400 font-extrabold font-mono">Binance Pay ID (ID de Binance):</span>
-                                          <div className="flex items-center gap-1.5">
-                                            <input
-                                              type="text"
-                                              readOnly
-                                              value={paymentConfig.binancePayId}
-                                              className="w-full bg-slate-50 border border-slate-100 rounded-lg py-2 px-3 text-[10px] font-mono text-slate-800 select-all focus:outline-none"
-                                            />
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                navigator.clipboard.writeText(paymentConfig.binancePayId);
-                                                setCopiedText("PAYID");
-                                                setTimeout(() => setCopiedText(""), 2000);
-                                              }}
-                                              className={`px-3 py-2 rounded-lg text-[9px] uppercase tracking-wider font-extrabold cursor-pointer transition shrink-0 ${
-                                                copiedText === "PAYID" 
-                                                  ? 'bg-emerald-500 text-white' 
-                                                  : 'bg-slate-900 border border-slate-850 text-[#E5B800] hover:bg-black'
-                                              }`}
-                                            >
-                                              {copiedText === "PAYID" ? '¡Copiado!' : 'Copiar'}
-                                            </button>
+                                        <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-3 rounded-xl border border-slate-100">
+                                          {/* Dynamic, Real-time Scannable QR Code */}
+                                          <div className="flex flex-col items-center space-y-1.5 shrink-0 bg-slate-50 p-2 text-center rounded-lg border border-slate-100 shadow-inner">
+                                            <div className="w-[100px] h-[100px] relative bg-white border border-slate-200/60 p-1 flex items-center justify-center rounded overflow-hidden">
+                                              <img 
+                                                src={paymentConfig.usdtQrImage || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent('tron:' + paymentConfig.usdtAddress)}`} 
+                                                alt="USDT TRC20 QR Code" 
+                                                className="w-full h-full object-contain rounded" 
+                                                referrerPolicy="no-referrer"
+                                              />
+                                            </div>
+                                            <span className="text-[7.5px] uppercase tracking-widest text-[#22C55E] font-bold font-mono">Escanea USDT</span>
+                                          </div>
+
+                                          <div className="space-y-2.5 w-full">
+                                            <div className="space-y-1">
+                                              <span className="block text-[8px] uppercase tracking-wider text-slate-400 font-extrabold font-mono">Dirección USDT (TRC20):</span>
+                                              <div className="flex items-center gap-1.5">
+                                                <input
+                                                  type="text"
+                                                  readOnly
+                                                  value={paymentConfig.usdtAddress}
+                                                  className="w-full bg-slate-50 border border-slate-100 rounded-lg py-2 px-3 text-[10px] font-mono text-slate-800 select-all focus:outline-none"
+                                                />
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    navigator.clipboard.writeText(paymentConfig.usdtAddress);
+                                                    setCopiedText("USDT");
+                                                    setTimeout(() => setCopiedText(""), 2000);
+                                                  }}
+                                                  className={`px-3 py-2 rounded-lg text-[9px] uppercase tracking-wider font-extrabold cursor-pointer transition shrink-0 ${
+                                                    copiedText === "USDT" 
+                                                      ? 'bg-emerald-500 text-white' 
+                                                      : 'bg-slate-900 border border-slate-850 text-brand-lime hover:bg-black'
+                                                  }`}
+                                                >
+                                                  {copiedText === "USDT" ? '¡Copiado!' : 'Copiar'}
+                                                </button>
+                                              </div>
+                                            </div>
+                                            <p className="text-[8px] uppercase tracking-tight text-slate-400 leading-normal font-mono">
+                                              • Envía exactamente el valor neto correspondiente para evitar demoras en el procesamiento de la licencia.
+                                            </p>
                                           </div>
                                         </div>
                                       </div>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Trazabilidad Information / How verification works (Institutional, emoji-free) */}
-                              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
-                                <span className="block text-[9px] uppercase tracking-wider text-slate-800 font-black font-mono">
-                                  Protocolo Oficial de Verificación e Inicio de Licencia:
-                                </span>
-                                <ul className="text-[8px] uppercase font-mono tracking-tight text-slate-600 space-y-1.5 list-none font-bold">
-                                  <li>• Realice la transferencia correspondiente al costo neto de la membresía seleccionada.</li>
-                                  <li>• Adjunte la captura de pantalla del comprobante de envío o ingrese el hash de transacción (TXID).</li>
-                                  <li>• La orden registrará un estado PENDIENTE en la base de datos de administración.</li>
-                                  <li>• El área encargada validará el depósito en el menor tiempo posible usando herramientas de explorador TRON o canales de verificación de red.</li>
-                                  <li>• Una vez confirmados los fondos se activará la licencia completa por un plazo estricto de 30 días.</li>
-                                </ul>
-                              </div>
-
-                              {/* PNG/JPG Receipt Upload Feature */}
-                              <div className="space-y-2">
-                                <label className="block text-[10px] uppercase tracking-wider text-slate-400 font-extrabold font-mono ml-1">
-                                  ¿Tienes la captura de pantalla de tu pago? (Recomendado)
-                                </label>
-                                
-                                {paymentTxHash.startsWith('data:image') ? (
-                                  <div className="relative p-3 bg-slate-50 border border-emerald-250 rounded-2xl flex flex-col items-center justify-center space-y-2 animate-[fadeIn_0.2s_ease-out]">
-                                    <img 
-                                      src={paymentTxHash} 
-                                      alt="Comprobante cargado" 
-                                      className="h-28 object-contain rounded-lg border border-slate-200 bg-white p-1 shadow-sm"
-                                    />
-                                    <div className="flex gap-2 items-center">
-                                      <span className="text-[8px] uppercase font-mono tracking-wider font-extrabold text-emerald-600 bg-emerald-50 border border-emerald-200/50 px-2 py-0.5 rounded">
-                                        ✓ Captura Cargada Con Éxito
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => setPaymentTxHash('')}
-                                        className="text-[8.5px] uppercase font-mono tracking-wider font-black text-red-500 hover:text-red-700 cursor-pointer"
-                                      >
-                                        [Eliminar]
-                                      </button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="relative border-2 border-dashed border-slate-200 hover:border-slate-300 rounded-2xl transition duration-200 bg-slate-50 hover:bg-slate-100/70 flex flex-col items-center justify-center p-5 text-center group">
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      onChange={handleReceiptFileChange}
-                                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                                      disabled={receiptFileLoading}
-                                    />
-                                    {receiptFileLoading ? (
-                                      <div className="flex flex-col items-center space-y-2 pb-1">
-                                        <Loader2 className="w-5 h-5 text-brand-navy animate-spin" />
-                                        <span className="text-[9px] uppercase font-bold tracking-wider text-slate-500 font-mono">Procesando imagen...</span>
-                                      </div>
                                     ) : (
-                                      <div className="space-y-1.5 flex flex-col items-center">
-                                        <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-slate-400 group-hover:scale-105 transition duration-150 shadow-sm border border-slate-100">
-                                          <Upload size={13} className="text-slate-500 animate-pulse" />
+                                      <div className="space-y-4 animate-[fadeIn_0.2s_ease-out]">
+                                        <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-widest text-[#E5B800] font-mono">
+                                          <span>Binance Pay Directo</span>
+                                          <span className="text-yellow-700 bg-yellow-500/10 border border-yellow-500/20 px-2 py-0.5 rounded text-[8.5px]">Cero Comisión / Instantáneo</span>
                                         </div>
-                                        <div>
-                                          <span className="text-[9.5px] font-bold text-slate-700 block uppercase font-mono">
-                                            Sube tu foto, captura o comprobante
-                                          </span>
-                                          <span className="text-[7.5px] uppercase tracking-wide text-slate-400 font-mono font-bold block mt-0.5">
-                                            Arrastra el archivo o haz clic aquí (PNG, JPG, JPEG)
-                                          </span>
+
+                                        <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-3 rounded-xl border border-slate-100">
+                                          {/* Dynamic, Real-time Scannable QR Code for Binance Pay */}
+                                          <div className="flex flex-col items-center space-y-1.5 shrink-0 bg-slate-50 p-2 text-center rounded-lg border border-slate-100 shadow-inner">
+                                            <div className="w-[100px] h-[100px] relative bg-white border border-slate-200/60 p-1 flex items-center justify-center rounded overflow-hidden">
+                                              <img 
+                                                src={paymentConfig.binanceQrImage || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(paymentConfig.binancePayId)}`} 
+                                                alt="Binance Pay QR Code" 
+                                                className="w-full h-full object-contain rounded" 
+                                                referrerPolicy="no-referrer"
+                                              />
+                                            </div>
+                                            <span className="text-[7.5px] uppercase tracking-widest text-[#E5B800] font-bold font-mono">Scan Pay ID</span>
+                                          </div>
+
+                                          <div className="space-y-2.5 w-full text-slate-800">
+                                            <div className="space-y-1">
+                                              <span className="block text-[8px] uppercase tracking-wider text-slate-400 font-extrabold font-mono">Binance Pay ID (ID de Binance):</span>
+                                              <div className="flex items-center gap-1.5">
+                                                <input
+                                                  type="text"
+                                                  readOnly
+                                                  value={paymentConfig.binancePayId}
+                                                  className="w-full bg-slate-50 border border-slate-100 rounded-lg py-2 px-3 text-[10px] font-mono text-slate-800 select-all focus:outline-none"
+                                                />
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    navigator.clipboard.writeText(paymentConfig.binancePayId);
+                                                    setCopiedText("PAYID");
+                                                    setTimeout(() => setCopiedText(""), 2000);
+                                                  }}
+                                                  className={`px-3 py-2 rounded-lg text-[9px] uppercase tracking-wider font-extrabold cursor-pointer transition shrink-0 ${
+                                                    copiedText === "PAYID" 
+                                                      ? 'bg-emerald-500 text-white' 
+                                                      : 'bg-slate-900 border border-slate-850 text-[#E5B800] hover:bg-black'
+                                                  }`}
+                                                >
+                                                  {copiedText === "PAYID" ? '¡Copiado!' : 'Copiar'}
+                                                </button>
+                                              </div>
+                                            </div>
+                                          </div>
                                         </div>
                                       </div>
                                     )}
                                   </div>
-                                )}
-                              </div>
 
-                              <div className="space-y-2">
-                                <label className="block text-[10px] uppercase tracking-wider text-slate-400 font-black font-mono ml-1">
-                                  {paymentMethod === 'BINANCE' 
-                                    ? 'ID de Orden / Binance Pay ID de Origen o Comprobante'
-                                    : 'ID de Transferencia / Hash de Pago (TXID)'}
-                                </label>
-                                <input
-                                  type="text"
-                                  required={!paymentTxHash.startsWith('data:image')}
-                                  value={paymentTxHash.startsWith('data:image') ? '' : paymentTxHash}
-                                  onChange={(e) => setPaymentTxHash(e.target.value)}
-                                  placeholder={
-                                    paymentMethod === 'BINANCE'
-                                      ? "Ingrese Binance Pay ID o número de comprobante"
-                                      : "Escribe el Hash (TXID) de tu transferencia"
-                                  }
-                                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3.5 px-4 text-xs font-mono tracking-widest text-slate-900 placeholder:text-slate-300 focus:outline-none focus:bg-white focus:border-slate-400"
-                                />
-                              </div>
+                                  {/* Trazabilidad Information / How verification works (Institutional, emoji-free) */}
+                                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                                    <span className="block text-[9px] uppercase tracking-wider text-slate-800 font-black font-mono">
+                                      Protocolo Oficial de Verificación e Inicio de Licencia:
+                                    </span>
+                                    <ul className="text-[8px] uppercase font-mono tracking-tight text-slate-600 space-y-1.5 list-none font-bold">
+                                      <li>• Realice la transferencia correspondiente al costo neto de la membresía seleccionada.</li>
+                                      <li>• Adjunte la captura de pantalla del comprobante de envío o ingrese el hash de transacción (TXID).</li>
+                                      <li>• La orden registrará un estado PENDIENTE en la base de datos de administración.</li>
+                                      <li>• El área encargada validará el depósito en el menor tiempo posible usando herramientas de explorador TRON o canales de verificación de red.</li>
+                                      <li>• Una vez confirmados los fondos se activará la licencia completa por un plazo estricto de 30 días.</li>
+                                    </ul>
+                                  </div>
 
-                              {paymentError && (
-                                <div className="p-3.5 bg-red-50 border border-red-100 text-red-500 text-[10.5px] font-semibold rounded-xl uppercase tracking-wider">
-                                  {paymentError}
-                                </div>
+                                  {/* PNG/JPG Receipt Upload Feature */}
+                                  <div className="space-y-2">
+                                    <label className="block text-[10px] uppercase tracking-wider text-slate-400 font-extrabold font-mono ml-1">
+                                      ¿Tienes la captura de pantalla de tu pago? (Recomendado)
+                                    </label>
+                                    
+                                    {paymentTxHash.startsWith('data:image') ? (
+                                      <div className="relative p-3 bg-slate-50 border border-emerald-250 rounded-2xl flex flex-col items-center justify-center space-y-2 animate-[fadeIn_0.2s_ease-out]">
+                                        <img 
+                                          src={paymentTxHash} 
+                                          alt="Comprobante cargado" 
+                                          className="h-28 object-contain rounded-lg border border-slate-200 bg-white p-1 shadow-sm"
+                                        />
+                                        <div className="flex gap-2 items-center">
+                                          <span className="text-[8px] uppercase font-mono tracking-wider font-extrabold text-emerald-600 bg-emerald-50 border border-emerald-200/50 px-2 py-0.5 rounded">
+                                            ✓ Captura Cargada Con Éxito
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={() => setPaymentTxHash('')}
+                                            className="text-[8.5px] uppercase font-mono tracking-wider font-black text-red-500 hover:text-red-700 cursor-pointer"
+                                          >
+                                            [Eliminar]
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="relative border-2 border-dashed border-slate-200 hover:border-slate-300 rounded-2xl transition duration-200 bg-slate-50 hover:bg-slate-100/70 flex flex-col items-center justify-center p-5 text-center group">
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          onChange={handleReceiptFileChange}
+                                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                          disabled={receiptFileLoading}
+                                        />
+                                        {receiptFileLoading ? (
+                                          <div className="flex flex-col items-center space-y-2 pb-1">
+                                            <Loader2 className="w-5 h-5 text-brand-navy animate-spin" />
+                                            <span className="text-[9px] uppercase font-bold tracking-wider text-slate-500 font-mono">Procesando imagen...</span>
+                                          </div>
+                                        ) : (
+                                          <div className="space-y-1.5 flex flex-col items-center">
+                                            <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-slate-400 group-hover:scale-105 transition duration-150 shadow-sm border border-slate-100">
+                                              <Upload size={13} className="text-slate-500 animate-pulse" />
+                                            </div>
+                                            <div>
+                                              <span className="text-[9.5px] font-bold text-slate-700 block uppercase font-mono">
+                                                Sube tu foto, captura o comprobante
+                                              </span>
+                                              <span className="text-[7.5px] uppercase tracking-wide text-slate-400 font-mono font-bold block mt-0.5">
+                                                Arrastra el archivo o haz clic aquí (PNG, JPG, JPEG)
+                                              </span>
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    <label className="block text-[10px] uppercase tracking-wider text-slate-400 font-black font-mono ml-1">
+                                      {paymentMethod === 'BINANCE' 
+                                        ? 'ID de Orden / Binance Pay ID de Origen o Comprobante'
+                                        : 'ID de Transferencia / Hash de Pago (TXID)'}
+                                    </label>
+                                    <input
+                                      type="text"
+                                      required={!paymentTxHash.startsWith('data:image')}
+                                      value={paymentTxHash.startsWith('data:image') ? '' : paymentTxHash}
+                                      onChange={(e) => setPaymentTxHash(e.target.value)}
+                                      placeholder={
+                                        paymentMethod === 'BINANCE'
+                                          ? "Ingrese Binance Pay ID o número de comprobante"
+                                          : "Escribe el Hash (TXID) de tu transferencia"
+                                      }
+                                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3.5 px-4 text-xs font-mono tracking-widest text-slate-900 placeholder:text-slate-300 focus:outline-none focus:bg-white focus:border-slate-400"
+                                    />
+                                  </div>
+
+                                  {paymentError && (
+                                    <div className="p-3.5 bg-red-50 border border-red-100 text-red-500 text-[10.5px] font-semibold rounded-xl uppercase tracking-wider">
+                                      {paymentError}
+                                    </div>
+                                  )}
+
+                                  {paymentSuccess && (
+                                    <div className="p-3.5 bg-emerald-50 border border-emerald-100 text-emerald-600 text-[10.5px] font-semibold rounded-xl uppercase tracking-wider animate-pulse">
+                                      {paymentSuccess}
+                                    </div>
+                                  )}
+
+                                  <button
+                                    type="submit"
+                                    disabled={isSubmittingPayment}
+                                    className="w-full py-4 bg-slate-900 hover:bg-black text-brand-lime font-bold rounded-xl text-[10px] uppercase tracking-widest transition-all cursor-pointer shadow-md flex items-center justify-center gap-1.5"
+                                  >
+                                    {isSubmittingPayment ? (
+                                      <span>Registrando Transacción...</span>
+                                    ) : (
+                                      <span>REGISTRAR COMPROBANTE Y ENVIAR REGISTRO</span>
+                                    )}
+                                  </button>
+                                </form>
                               )}
-
-                              {paymentSuccess && (
-                                <div className="p-3.5 bg-emerald-50 border border-emerald-100 text-emerald-600 text-[10.5px] font-semibold rounded-xl uppercase tracking-wider animate-pulse">
-                                  {paymentSuccess}
-                                </div>
-                              )}
-
-                              <button
-                                type="submit"
-                                disabled={isSubmittingPayment}
-                                className="w-full py-4 bg-slate-900 hover:bg-black text-brand-lime font-bold rounded-xl text-[10px] uppercase tracking-widest transition-all cursor-pointer shadow-md flex items-center justify-center gap-1.5"
-                              >
-                                {isSubmittingPayment ? (
-                                  <span>Registrando Transacción...</span>
-                                ) : (
-                                  <span>REGISTRAR COMPROBANTE Y ENVIAR REGISTRO</span>
-                                )}
-                              </button>
-                            </form>
+                            </div>
                           )}
                         </motion.div>
                       </motion.div>
@@ -1897,7 +2305,7 @@ export default function App() {
                           <span className="text-brand-lime">Estructura Cuantitativa</span>
                         </h2>
                         <p className="text-slate-500 text-xs sm:text-sm leading-relaxed max-w-sm">
-                          Cargue la telemetría visual de TradingView (XAUUSD). IA XAU KIN ejecutará un escaneo de alta precisión para identificar desequilibrios, BOS y CHoCH en ventanas de 60 minutos.
+                          Cargue la telemetría visual de TradingView (XAUUSD). IA XAU KIN ejecutará un escaneo de alta precisión para identificar desequilibrios, BOS y CHoCH en ventanas de {selectedDuration} minutos.
                         </p>
                       </section>
 
@@ -1957,6 +2365,66 @@ export default function App() {
                           className="hidden" 
                           accept="image/*"
                         />
+                      </div>
+
+                      {/* Ventana Temporal Config */}
+                      <div className="bg-slate-50/70 border border-slate-100 rounded-3xl p-5 space-y-4 shadow-sm animate-[fadeIn_0.3s_ease-out]">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                            <span className="text-[9.5px] uppercase tracking-[0.2em] text-slate-500 font-mono font-bold">Ventana Temporal Dinámica</span>
+                          </div>
+                          {currentUser && currentUser.plan === 'RETAIL' && !currentUser.isTelemetryLimited && (
+                            <span className="text-[8px] bg-red-500/10 border border-red-500/20 text-red-600 px-2.5 py-1 rounded-md font-bold uppercase shrink-0 flex items-center gap-1">
+                              <Lock size={10} className="text-red-500" /> Exclusivo PRO
+                            </span>
+                          )}
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!currentUser) return;
+                              if (currentUser.plan === 'RETAIL' && !currentUser.isTelemetryLimited) {
+                                setError("VENTANA DE SOCIO PRO RESTRINGIDA: La ventana de 30 minutos es una ventaja exclusiva para Socios Pro o Socios Institucionales. Contacte a la administración para mejorar su cuenta.");
+                                return;
+                              }
+                              setSelectedDuration(30);
+                            }}
+                            className={`py-3.5 px-3 rounded-2xl text-[10.5px] font-bold uppercase tracking-wider transition-all duration-300 border flex flex-col items-center justify-center gap-1.5 cursor-pointer relative overflow-hidden group
+                              ${selectedDuration === 30 
+                                ? 'bg-slate-950 border-slate-900 text-brand-lime shadow-xl' 
+                                : 'bg-white border-slate-100 text-slate-500 hover:bg-slate-100 hover:text-slate-900 hover:border-slate-200'
+                              } ${currentUser && currentUser.plan === 'RETAIL' && !currentUser.isTelemetryLimited ? 'opacity-70' : ''}`}
+                          >
+                            <span className="font-bold">30 Minutos</span>
+                            <span className="text-[7.5px] opacity-75 normal-case font-medium tracking-normal text-center">Socio PRO / Avanzado</span>
+                          </button>
+                          
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDuration(60)}
+                            className={`py-3.5 px-3 rounded-2xl text-[10.5px] font-bold uppercase tracking-wider transition-all duration-300 border flex flex-col items-center justify-center gap-1.5 cursor-pointer relative overflow-hidden group
+                              ${selectedDuration === 60 
+                                ? 'bg-slate-950 border-slate-900 text-brand-lime shadow-xl' 
+                                : 'bg-white border-slate-100 text-slate-500 hover:bg-slate-100 hover:text-slate-900 hover:border-slate-200'
+                              }`}
+                          >
+                            <span className="font-bold">60 Minutos</span>
+                            <span className="text-[7.5px] opacity-75 normal-case font-medium tracking-normal text-center">Bloque Estándar (H1)</span>
+                          </button>
+                        </div>
+                        
+                        <div className="flex items-start gap-2 text-[9.5px] text-slate-400 leading-relaxed font-sans font-medium">
+                          <Clock className="w-3.5 h-3.5 text-brand-lime shrink-0 mt-0.5" />
+                          <span>
+                            {selectedDuration === 30 
+                              ? "Prisma de 30 min: Estrategia de menor duración temporal para scalping inmediato de 10 pips." 
+                              : "Prisma de 60 min: Análisis estándar de rango institucional con balance del algoritmo IPDA."
+                            }
+                          </span>
+                        </div>
                       </div>
 
                       {currentUser && (

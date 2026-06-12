@@ -44,11 +44,11 @@ export interface MarketPlanDetails {
 export const PLAN_DETAILS: Record<SubscriptionPlan, MarketPlanDetails> = {
   RETAIL: {
     id: 'RETAIL',
-    name: 'Socio Retail',
+    name: 'Socio Básico',
     price: '$29 / Mes',
     features: [
       'Hasta 150 análisis con IA al mes (Cupo de 5 diarios)',
-      'Ventana de modelado temporal de 60 minutos',
+      'Ventana de modelado temporal fija de 60 minutos',
       'Identificación de soporte y desequilibrio general',
       'Vectores de entrada con cálculo de 10 pips'
     ],
@@ -61,9 +61,9 @@ export const PLAN_DETAILS: Record<SubscriptionPlan, MarketPlanDetails> = {
     price: '$79 / Mes',
     features: [
       'Hasta 900 análisis con IA al mes (Cupo de 30 diarios)',
+      'Ventana de modelado flexible (Posibilidad de ajustarse a 60 y 30 minutos según prefiera el usuario)',
       'Prioridad de procesamiento (Sin tiempos de espera)',
       'Identificación avanzada de BOS, CHoCH y desequilibrios',
-      'Soporte técnico individual de alta prioridad 24/7',
       'Sugerencias para lotaje y gestión cuantitativa'
     ],
     color: 'brand-lime',

@@ -61,7 +61,7 @@ export const userStore = {
           username: cleanUsername,
           email: firebaseUser.email || '',
           role: isOwnerAdmin ? 'ADMIN' : 'USER',
-          plan: isOwnerAdmin ? 'INSTITUTIONAL' : 'PRO', // Grant PRO of default on registration
+          plan: isOwnerAdmin ? 'INSTITUTIONAL' : 'RETAIL', // Default to RETAIL on registration
           status: isOwnerAdmin ? 'ACTIVE' : 'INACTIVE',
           joinedAt: new Date().toISOString(),
         };
@@ -412,7 +412,7 @@ export const userStore = {
   async getPaymentConfig(): Promise<{ 
     usdtAddress: string; 
     binancePayId: string; 
-    binanceEmail: string; 
+    binanceEmail?: string; 
     customMessage?: string;
     usdtQrImage?: string;
     binanceQrImage?: string;
@@ -451,7 +451,7 @@ export const userStore = {
   async updatePaymentConfig(config: { 
     usdtAddress: string; 
     binancePayId: string; 
-    binanceEmail: string; 
+    binanceEmail?: string; 
     customMessage?: string;
     usdtQrImage?: string;
     binanceQrImage?: string;
@@ -461,7 +461,7 @@ export const userStore = {
       await setDoc(doc(db, 'settings', 'payment'), {
         usdtAddress: config.usdtAddress.trim(),
         binancePayId: config.binancePayId.trim(),
-        binanceEmail: config.binanceEmail.trim(),
+        binanceEmail: config.binanceEmail?.trim() || '',
         customMessage: config.customMessage?.trim() || '',
         usdtQrImage: config.usdtQrImage || '',
         binanceQrImage: config.binanceQrImage || '',

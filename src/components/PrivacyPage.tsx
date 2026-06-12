@@ -78,7 +78,7 @@ export function PrivacyPage({ navigateTo }: PrivacyPageProps) {
               </p>
               <ul className="list-disc pl-6 space-y-2">
                 <li>
-                  <strong>Información de Autenticación:</strong> Datos provistos de forma transparente mediante Google Firebase Authentication (incluyendo nombre, correo electrónico y foto de perfil opcional).
+                  <strong>Información de Autenticación:</strong> Datos provistos de forma segura y encriptada mediante protocolos avanzados de control de acceso (incluyendo nombre, correo electrónico y parámetros de perfil opcionales).
                 </li>
                 <li>
                   <strong>Configuraciones y Claves Personales:</strong> Si decide configurar manualmente su clave de API de Gemini, esta información se retiene localmente en el almacenamiento persistente de su navegador (LocalStorage) y nunca se transmite a nuestros servidores centrales de forma permanente.
@@ -114,8 +114,8 @@ export function PrivacyPage({ navigateTo }: PrivacyPageProps) {
                 <strong>IA XAU KIN</strong> no comercializa, transfiere ni distribuye bajo ningún concepto sus datos personales a agencias publicitarias ni a intermediarios externos. Compartimos información estrictamente necesaria con proveedores tecnológicos de primer nivel para brindar el servicio:
               </p>
               <ul className="list-disc pl-6 space-y-2">
-                <li><strong>Google Firebase:</strong> Para la base de datos distribuida en la nube (Firestore) y la gestión segura de accesos.</li>
-                <li><strong>Google Cloud & Gemini API:</strong> Para el procesamiento seguro y encriptado en tránsito de las imágenes de gráficos cargadas.</li>
+                <li><strong>Infraestructura Central Segura:</strong> Para el almacenamiento en base de datos cifrada y la gestión hermética de accesos y credenciales de operadores.</li>
+                <li><strong>Sistemas Avanzados de Procesamiento:</strong> Para el análisis seguro, en tránsito y totalmente privado, de las imágenes de gráficos técnicos cargadas por los operadores.</li>
               </ul>
             </section>
 

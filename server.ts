@@ -4,6 +4,8 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import dotenv from "dotenv";
 import fs from "fs";
+import { collection, query, where, getDocs, updateDoc, doc } from "firebase/firestore";
+import { db } from "./src/lib/firebase";
 
 dotenv.config();
 
@@ -178,48 +180,81 @@ app.post("/api/analyze", async (req, res) => {
     const model = "gemini-3.5-flash";
     let lastError: any = null;
     let completedText = "";
+    
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
     // Iterate through API key rotation pool
     for (let i = 0; i < candidateKeys.length; i++) {
       const activeKey = candidateKeys[i];
       console.log(`[IA XAU KIN Server] Intentando análisis con clave ${i + 1}/${candidateKeys.length} (longitud: ${activeKey.length})`);
       
-      try {
-        const genAI = new GoogleGenAI({ apiKey: activeKey });
-        
-        const result = await genAI.models.generateContent({
-          model: model,
-          contents: [
-            {
-              parts: [
-                { text: systemPrompt || "Actúa como analista financiero profesional de mercados." },
-                {
-                  inlineData: {
-                    mimeType: mimeType,
-                    data: base64Data
-                  }
-                },
-                { text: "Ejecutar modelado cuantitativo inmediato sobre esta telemetría visual." }
-              ]
-            }
-          ],
-          config: {
-            temperature: 0.15
-          }
-        });
+      let attempts = 0;
+      const maxAttempts = 2;
+      let keySuccess = false;
 
-        if (result.text) {
-          completedText = result.text;
-          console.log(`[IA XAU KIN Server] Sincronización exitosa utilizando la clave API ${i + 1}/${candidateKeys.length}`);
-          break; // Succeeded! Break out of loop.
-        } else {
-          throw new Error("Respuesta vacía recibida de Gemini.");
+      while (attempts < maxAttempts) {
+        attempts++;
+        try {
+          const genAI = new GoogleGenAI({ apiKey: activeKey });
+          
+          const result = await genAI.models.generateContent({
+            model: model,
+            contents: [
+              {
+                parts: [
+                  { text: systemPrompt || "Actúa como analista financiero profesional de mercados." },
+                  {
+                    inlineData: {
+                      mimeType: mimeType,
+                      data: base64Data
+                    }
+                  },
+                  { text: "Ejecutar modelado cuantitativo inmediato sobre esta telemetría visual." }
+                ]
+              }
+            ],
+            config: {
+              temperature: 0.15
+            }
+          });
+
+          if (result.text) {
+            completedText = result.text;
+            console.log(`[IA XAU KIN Server] Sincronización exitosa utilizando la clave API ${i + 1}/${candidateKeys.length} (Intento ${attempts}/${maxAttempts})`);
+            keySuccess = true;
+            break; // Break inner loop
+          } else {
+            throw new Error("Respuesta vacía recibida de Gemini.");
+          }
+        } catch (err: any) {
+          lastError = err;
+          const errMsg = err.message || JSON.stringify(err);
+          console.error(`[IA XAU KIN Server] Fallo de clave API ${i + 1}/${candidateKeys.length} en intento ${attempts}/${maxAttempts}:`, errMsg);
+          
+          const isTransient = errMsg.includes("503") || 
+                              errMsg.includes("demand") || 
+                              errMsg.includes("UNAVAILABLE") || 
+                              errMsg.includes("500") ||
+                              errMsg.includes("429") ||
+                              errMsg.includes("RESOURCE_EXHAUSTED");
+
+          if (isTransient && attempts < maxAttempts) {
+            const delay = 800 * attempts;
+            console.log(`[IA XAU KIN Server] Inconveniente de alta demanda o cuota detectado (503/429/500). Esperando ${delay}ms de enfriamiento antes del intento ${attempts + 1}/${maxAttempts}...`);
+            await sleep(delay);
+          } else {
+            // Unrecoverable on this key (e.g. invalid key) or reached max attempts
+            break;
+          }
         }
-      } catch (err: any) {
-        lastError = err;
-        console.error(`[IA XAU KIN Server] Fallo al usar clave API ${i + 1}/${candidateKeys.length}:`, err.message || err);
+      }
+
+      if (keySuccess) {
+        break; // Succeeded! Break key rotation loop.
+      } else {
         if (i < candidateKeys.length - 1) {
-          console.log("[IA XAU KIN Server] Intentando reintento con la siguiente clave de API...");
+          console.log("[IA XAU KIN Server] Intentando reintento con la siguiente clave de API tras 500ms de retraso...");
+          await sleep(500);
         }
       }
     }
@@ -247,6 +282,98 @@ app.post("/api/analyze", async (req, res) => {
     return res.status(500).json({
       error: `Error interno de servidor: ${err.message || err}`
     });
+  }
+});
+
+// PayPal Webhooks endpoint to automatically renew user subscriptions
+app.post("/api/paypal/webhook", async (req, res) => {
+  const event = req.body;
+  console.log(`[PayPal Webhook] Recibido Evento: ${event.event_type}`, JSON.stringify(event));
+
+  try {
+    let subscriptionId = "";
+    
+    // Extract subscriptionId based on event type and structure
+    if (event.resource && event.resource.billing_agreement_id) {
+      // Occurs during recurring monthly payments: PAYMENT.SALE.COMPLETED
+      subscriptionId = event.resource.billing_agreement_id;
+    } else if (event.resource && event.resource.id && event.event_type && event.event_type.startsWith("BILLING.SUBSCRIPTION.")) {
+      // Occurs during status changes: BILLING.SUBSCRIPTION.ACTIVATED, CANCELLED, EXPIRED
+      subscriptionId = event.resource.id;
+    }
+
+    if (!subscriptionId) {
+      console.log("[PayPal Webhook] No se encontró ID de acuerdo de facturación/suscripción en este evento.");
+      return res.json({ received: true, message: "No subscription id found in event payload." });
+    }
+
+    console.log(`[PayPal Webhook] Buscando suscriptor asociado en Firestore para ID: ${subscriptionId}`);
+
+    // Query across users collection for paymentReceiptUrl containing the subscriptionId
+    const usersColl = collection(db, "users");
+    const q1 = query(usersColl, where("paymentReceiptUrl", "==", `PAYPAL_SUSB_ID:${subscriptionId}`));
+    const snap1 = await getDocs(q1);
+    
+    let userDocToUpdate: any = null;
+    snap1.forEach((d) => {
+      userDocToUpdate = { id: d.id, ...d.data() };
+    });
+
+    if (!userDocToUpdate) {
+      // Alternately query for raw subscriptionId
+      const q2 = query(usersColl, where("paymentReceiptUrl", "==", subscriptionId));
+      const snap2 = await getDocs(q2);
+      snap2.forEach((d) => {
+        userDocToUpdate = { id: d.id, ...d.data() };
+      });
+    }
+
+    if (!userDocToUpdate) {
+      console.warn(`[PayPal Webhook] Operador no encontrado para ID de suscripción: ${subscriptionId}`);
+      return res.status(404).json({ error: `No se encontró usuario con la suscripción PayPal ID: ${subscriptionId}` });
+    }
+
+    console.log(`[PayPal Webhook] Coincidencia encontrada: ${userDocToUpdate.username} (ID: ${userDocToUpdate.id})`);
+
+    const userDocRef = doc(db, "users", userDocToUpdate.id);
+
+    if (event.event_type === "PAYMENT.SALE.COMPLETED") {
+      // Success recurring renewal payment! Extend duration automatically by another 30 days
+      const currentExpiry = userDocToUpdate.expiresAt ? new Date(userDocToUpdate.expiresAt) : new Date();
+      const baseDate = currentExpiry > new Date() ? currentExpiry : new Date();
+      
+      const newExpiry = new Date(baseDate);
+      newExpiry.setDate(newExpiry.getDate() + 30);
+
+      await updateDoc(userDocRef, {
+        status: "ACTIVE",
+        expiresAt: newExpiry.toISOString(),
+        plan: userDocToUpdate.plan || "PRO"
+      });
+
+      console.log(`[PayPal Webhook] Renovación automática concretada para ${userDocToUpdate.username}. Vence: ${newExpiry.toISOString()}`);
+    } else if (event.event_type === "BILLING.SUBSCRIPTION.CANCELLED" || event.event_type === "BILLING.SUBSCRIPTION.EXPIRED") {
+      // Card cancelled or expired on PayPal
+      await updateDoc(userDocRef, {
+        status: "EXPIRED"
+      });
+      console.log(`[PayPal Webhook] Suscripción cancelada de forma automática para ${userDocToUpdate.username}.`);
+    } else if (event.event_type === "BILLING.SUBSCRIPTION.ACTIVATED") {
+      // Enrolled subscription activated initially
+      const newExpiry = new Date();
+      newExpiry.setDate(newExpiry.getDate() + 30);
+
+      await updateDoc(userDocRef, {
+        status: "ACTIVE",
+        expiresAt: newExpiry.toISOString()
+      });
+      console.log(`[PayPal Webhook] Suscripción inscrita correctamente y activada para ${userDocToUpdate.username}.`);
+    }
+
+    return res.json({ success: true, username: userDocToUpdate.username, status: "updated" });
+  } catch (err: any) {
+    console.error("[PayPal Webhook] Error crítico de procesamiento:", err);
+    return res.status(500).json({ error: `Fallo al procesar Webhook: ${err.message || err}` });
   }
 });
 
