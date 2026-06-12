@@ -416,6 +416,9 @@ export const userStore = {
     customMessage?: string;
     usdtQrImage?: string;
     binanceQrImage?: string;
+    paypalClientId?: string;
+    paypalPlanIdBasic?: string;
+    paypalPlanIdPro?: string;
   }> {
     const path = 'settings/payment';
     const fallback = {
@@ -424,7 +427,10 @@ export const userStore = {
       binanceEmail: 'pagos@iaxaukin.com',
       customMessage: 'Envía el monto neto exacto de tu plan. No cubrimos comisiones de retiro de exchanges externos. Tu licencia se activará tras confirmación manual.',
       usdtQrImage: '',
-      binanceQrImage: ''
+      binanceQrImage: '',
+      paypalClientId: 'BAA-Qyr9jMnnpjjCeqy_wmkaWooAqWlZD_H63OIR9znYei195dD7E3Eq0sjapP7OHxH6UmADRjn9wZf3Vc',
+      paypalPlanIdBasic: 'P-6U703114N8775584UNIU4K7Y',
+      paypalPlanIdPro: 'P-022706311G490222MNIU4USY'
     };
     
     try {
@@ -437,7 +443,10 @@ export const userStore = {
           binanceEmail: data.binanceEmail || fallback.binanceEmail,
           customMessage: data.customMessage || fallback.customMessage,
           usdtQrImage: data.usdtQrImage || '',
-          binanceQrImage: data.binanceQrImage || ''
+          binanceQrImage: data.binanceQrImage || '',
+          paypalClientId: data.paypalClientId || fallback.paypalClientId,
+          paypalPlanIdBasic: data.paypalPlanIdBasic || fallback.paypalPlanIdBasic,
+          paypalPlanIdPro: data.paypalPlanIdPro || fallback.paypalPlanIdPro,
         };
       }
       return fallback;
@@ -455,6 +464,9 @@ export const userStore = {
     customMessage?: string;
     usdtQrImage?: string;
     binanceQrImage?: string;
+    paypalClientId?: string;
+    paypalPlanIdBasic?: string;
+    paypalPlanIdPro?: string;
   }): Promise<void> {
     const path = 'settings/payment';
     try {
@@ -465,6 +477,9 @@ export const userStore = {
         customMessage: config.customMessage?.trim() || '',
         usdtQrImage: config.usdtQrImage || '',
         binanceQrImage: config.binanceQrImage || '',
+        paypalClientId: config.paypalClientId?.trim() || '',
+        paypalPlanIdBasic: config.paypalPlanIdBasic?.trim() || '',
+        paypalPlanIdPro: config.paypalPlanIdPro?.trim() || '',
         updatedAt: new Date().toISOString()
       }, { merge: true });
     } catch (err) {

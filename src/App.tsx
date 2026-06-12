@@ -444,13 +444,19 @@ export default function App() {
     customMessage?: string;
     usdtQrImage?: string;
     binanceQrImage?: string;
+    paypalClientId?: string;
+    paypalPlanIdBasic?: string;
+    paypalPlanIdPro?: string;
   }>({
     usdtAddress: 'TCWAFUsu2iuwkrQyATGKBjdSYczm2pVDGk', // Owner's new address as default
     binancePayId: '1129008012',
     binanceEmail: 'pagos@iaxaukin.com',
     customMessage: 'Envía el monto neto exacto de tu plan. No cubrimos comisiones de retiro de exchanges externos. Tu licencia se activará tras confirmación manual.',
     usdtQrImage: '',
-    binanceQrImage: ''
+    binanceQrImage: '',
+    paypalClientId: 'BAA-Qyr9jMnnpjjCeqy_wmkaWooAqWlZD_H63OIR9znYei195dD7E3Eq0sjapP7OHxH6UmADRjn9wZf3Vc',
+    paypalPlanIdBasic: 'P-6U703114N8775584UNIU4K7Y',
+    paypalPlanIdPro: 'P-022706311G490222MNIU4USY'
   });
   const [isUpdatingPaymentConfig, setIsUpdatingPaymentConfig] = useState(false);
   const [paymentConfigMsg, setPaymentConfigMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -1692,6 +1698,49 @@ export default function App() {
                             )}
                           </div>
 
+                          <div className="space-y-1.5 pt-4 border-t border-slate-100">
+                            <label className="text-[9px] text-[#00457C] font-black uppercase tracking-wider block font-mono flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" />
+                              Clave de Cliente PayPal (Client ID - Producción/Sandbox)
+                            </label>
+                            <input
+                              type="text"
+                              value={paymentConfig.paypalClientId || ''}
+                              onChange={(e) => setPaymentConfig(prev => ({ ...prev, paypalClientId: e.target.value }))}
+                              placeholder="Ej: AW_v7Bxt6..."
+                              className="w-full bg-slate-50 border border-slate-100 rounded-xl py-2.5 px-3.5 text-[10.5px] font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                            <p className="text-[8px] text-slate-400">Obtenido de developer.paypal.com (Live App ID o Sandbox).</p>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] text-[#00457C] font-black uppercase tracking-wider block font-mono flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" />
+                              ID Plan PayPal - Básico ($29)
+                            </label>
+                            <input
+                              type="text"
+                              value={paymentConfig.paypalPlanIdBasic || ''}
+                              onChange={(e) => setPaymentConfig(prev => ({ ...prev, paypalPlanIdBasic: e.target.value }))}
+                              placeholder="Ej: P-6U703114..."
+                              className="w-full bg-slate-50 border border-slate-100 rounded-xl py-2.5 px-3.5 text-[10.5px] font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5 pb-2">
+                            <label className="text-[9px] text-[#00457C] font-black uppercase tracking-wider block font-mono flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" />
+                              ID Plan PayPal - Pro ($79)
+                            </label>
+                            <input
+                              type="text"
+                              value={paymentConfig.paypalPlanIdPro || ''}
+                              onChange={(e) => setPaymentConfig(prev => ({ ...prev, paypalPlanIdPro: e.target.value }))}
+                              placeholder="Ej: P-02270631..."
+                              className="w-full bg-slate-50 border border-slate-100 rounded-xl py-2.5 px-3.5 text-[10.5px] font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                          </div>
+
                           {paymentConfigMsg && (
                             <div className={`p-3 rounded-xl text-[9px] uppercase font-mono tracking-wider font-extrabold ${paymentConfigMsg.type === 'success' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-red-50 text-red-500 border border-red-100'}`}>
                               {paymentConfigMsg.type === 'success' ? '✓ ' : '✗ '} {paymentConfigMsg.text}
@@ -1706,7 +1755,7 @@ export default function App() {
                             {isUpdatingPaymentConfig ? (
                               <span className="animate-pulse">Guardando Configuración...</span>
                             ) : (
-                              <span>✓ Actualizar Criptodatos</span>
+                              <span>✓ Guardar configuraciones de cobro</span>
                             )}
                           </button>
                         </form>
@@ -2005,8 +2054,11 @@ export default function App() {
                                       </div>
 
                                       <PayPalSubscriptionButton 
-                                        clientId="BAA-Qyr9jMnnpjjCeqy_wmkaWooAqWlZD_H63OIR9znYei195dD7E3Eq0sjapP7OHxH6UmADRjn9wZf3Vc"
-                                        planId={checkoutPlan === 'RETAIL' ? 'P-6U703114N8775584UNIU4K7Y' : 'P-022706311G490222MNIU4USY'}
+                                        clientId={paymentConfig.paypalClientId || "BAA-Qyr9jMnnpjjCeqy_wmkaWooAqWlZD_H63OIR9znYei195dD7E3Eq0sjapP7OHxH6UmADRjn9wZf3Vc"}
+                                        planId={checkoutPlan === 'RETAIL' 
+                                          ? (paymentConfig.paypalPlanIdBasic || "P-6U703114N8775584UNIU4K7Y") 
+                                          : (paymentConfig.paypalPlanIdPro || "P-022706311G490222MNIU4USY")
+                                        }
                                         onSuccess={async (subscriptionId) => {
                                           setIsSubmittingPayment(true);
                                           setPaymentError(null);
@@ -2037,10 +2089,10 @@ export default function App() {
                                   ) : (
                                     <div className="p-4 text-center space-y-2 bg-slate-50 border border-slate-100 rounded-2xl">
                                       <p className="text-xs text-slate-600 font-medium font-sans">
-                                        Las suscripciones automatizadas con PayPal están únicamente integradas para la <b>Membresía Básica (Socio Básico)</b>.
+                                        Las suscripciones automatizadas con PayPal están reservadas únicamente para la <b>Membresía Básica y Pro</b>.
                                       </p>
                                       <p className="text-[10px] text-slate-400 font-sans">
-                                        Por favor use USDT o Binance Pay para adquirir el plan Socio Pro, o contacte a gerencia administrativa.
+                                        Para adquirir el Plan Socio Institucional, por favor contacta a gerencia administrativa en gerencia@iaxaukin.com o utiliza USDT / Binance Pay.
                                       </p>
                                     </div>
                                   )}
