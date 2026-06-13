@@ -1,0 +1,27 @@
+{
+  "short_name": "IA XAU KIN",
+  "name": "IA XAU KIN - Consola de Operador",
+  "icons": [
+    {
+      "src": "/app_icon.jpg",
+      "type": "image/jpeg",
+      "sizes": "1024x1024",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/app_icon.jpg",
+      "type": "image/jpeg",
+      "sizes": "512x512"
+    },
+    {
+      "src": "/app_icon.jpg",
+      "type": "image/jpeg",
+      "sizes": "192x192"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0c0e14",
+  "theme_color": "#0c0e14",
+  "display": "standalone",
+  "orientation": "portrait"
+}
