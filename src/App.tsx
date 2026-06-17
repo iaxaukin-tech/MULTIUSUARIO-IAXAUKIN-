@@ -28,7 +28,14 @@ import {
   CreditCard,
   Wallet,
   QrCode,
-  Lock
+  Lock,
+  Camera,
+  Globe,
+  Webhook,
+  Send,
+  Share2,
+  Search,
+  Filter
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -36,6 +43,9 @@ import { Login } from './components/Login';
 import { PrivacyPage } from './components/PrivacyPage';
 import { TermsPage } from './components/TermsPage';
 import { PayPalSubscriptionButton } from './components/PayPalSubscriptionButton';
+import { CameraModal } from './components/CameraModal';
+import { ProfileModal } from './components/ProfileModal';
+import { InstitutionalBoard } from './components/InstitutionalBoard';
 import { userStore } from './utils/userStore';
 import { User, ActivationCode, SubscriptionPlan, PLAN_DETAILS } from './types';
 import { auth } from './lib/firebase';
@@ -413,8 +423,8 @@ export default function App() {
     return 0;
   }, [currentUser]);
   
-  // Custom navigation state for Admins (Mesa Admin / Terminal de Análisis)
-  const [viewMode, setViewMode] = useState<'TERMINAL' | 'ADMIN_BOARD'>('TERMINAL');
+  // Custom navigation state for Admins and Institutional partners
+  const [viewMode, setViewMode] = useState<'TERMINAL' | 'ADMIN_BOARD' | 'INSTITUTIONAL_BOARD'>('TERMINAL');
 
   // Inactive profile activation state
   const [activationCode, setActivationCode] = useState('');
@@ -435,6 +445,30 @@ export default function App() {
   // Lightbox and file loading states for payment screenshots
   const [adminLightboxImage, setAdminLightboxImage] = useState<string | null>(null);
   const [receiptFileLoading, setReceiptFileLoading] = useState(false);
+
+  // Camera & Profile state triggers
+  const [isReceiptCameraOpen, setIsReceiptCameraOpen] = useState(false);
+  const [isTelemetryCameraOpen, setIsTelemetryCameraOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [showExpirationAlertPopup, setShowExpirationAlertPopup] = useState(false);
+
+  // Auto-trigger membership expiration alert modal if 5 or fewer days are remaining
+  useEffect(() => {
+    if (currentUser && currentUser.role !== 'ADMIN' && currentUser.expiresAt) {
+      const expiryDate = new Date(currentUser.expiresAt);
+      const today = new Date();
+      const d1 = Date.UTC(expiryDate.getFullYear(), expiryDate.getMonth(), expiryDate.getDate());
+      const d2 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+      const diffDays = Math.ceil((d1 - d2) / (1000 * 60 * 60 * 24));
+      
+      const hasDismissed = sessionStorage.getItem('dismissed_expiration_popup_v2');
+      if (diffDays <= 5 && !hasDismissed) {
+        setShowExpirationAlertPopup(true);
+      }
+    } else {
+      setShowExpirationAlertPopup(false);
+    }
+  }, [currentUser]);
 
   // Dynamic Payment Configuration State from Firebase
   const [paymentConfig, setPaymentConfig] = useState<{
@@ -512,6 +546,18 @@ export default function App() {
     }
   };
 
+  const handleReceiptCameraCapture = (base64Image: string) => {
+    setPaymentTxHash(base64Image);
+    setPaymentError(null);
+  };
+
+  const handleTelemetryCameraCapture = (base64Image: string) => {
+    setImage(base64Image);
+    setMimeType("image/jpeg");
+    setAnalysis(null);
+    setError(null);
+  };
+
   const handleUsdtQrChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -575,6 +621,27 @@ export default function App() {
 
   // Admin View state references
   const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [adminSearchQuery, setAdminSearchQuery] = useState('');
+  const [adminFilterPlan, setAdminFilterPlan] = useState<string>('ALL');
+  const [adminFilterStatus, setAdminFilterStatus] = useState<string>('ALL');
+
+  const filteredUsers = useMemo(() => {
+    return allUsers.filter(user => {
+      // 1. Text search (username, email)
+      const matchesSearch = 
+        (user.username || '').toLowerCase().includes(adminSearchQuery.toLowerCase()) ||
+        (user.email || '').toLowerCase().includes(adminSearchQuery.toLowerCase());
+      
+      // 2. Plan filter
+      const matchesPlan = adminFilterPlan === 'ALL' || user.plan === adminFilterPlan;
+
+      // 3. Status filter
+      const matchesStatus = adminFilterStatus === 'ALL' || user.status === adminFilterStatus;
+
+      return matchesSearch && matchesPlan && matchesStatus;
+    });
+  }, [allUsers, adminSearchQuery, adminFilterPlan, adminFilterStatus]);
+
   const [allCodes, setAllCodes] = useState<ActivationCode[]>([]);
   const [newCodePlan, setNewCodePlan] = useState<SubscriptionPlan>('PRO');
   const [newCodeDuration, setNewCodeDuration] = useState(30);
@@ -1080,6 +1147,16 @@ export default function App() {
                     </button>
                   )}
 
+                  {((currentUser.plan === 'INSTITUTIONAL' && currentUser.status === 'ACTIVE') || currentUser.role === 'ADMIN') && (
+                    <button 
+                      onClick={() => setViewMode('INSTITUTIONAL_BOARD')}
+                      className={`flex items-center gap-1.5 transition-colors cursor-pointer group ${viewMode === 'INSTITUTIONAL_BOARD' ? 'text-black font-black' : 'hover:text-slate-900'}`}
+                    >
+                      <Globe size={13} className={viewMode === 'INSTITUTIONAL_BOARD' ? 'text-brand-lime' : 'group-hover:text-brand-lime'} />
+                      <span className="hidden xs:inline sm:inline">Comunidad / IB</span>
+                    </button>
+                  )}
+
                   {currentUser.role === 'ADMIN' && (
                     <>
                       <div className="h-3 w-[1px] bg-slate-200 hidden sm:block" />
@@ -1097,13 +1174,18 @@ export default function App() {
 
                   <div className="h-3.5 w-[1px] bg-slate-200" />
 
-                  {/* Logged profile banner */}
-                  <div className="hidden sm:flex flex-col items-end leading-none">
-                    <span className="text-[9px] text-slate-800 font-mono font-bold lowercase">@{currentUser.username}</span>
-                    <span className="text-[7.5px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+                  {/* Logged profile banner - Clickable user session profile trigger */}
+                  <button
+                    type="button"
+                    onClick={() => setIsProfileModalOpen(true)}
+                    className="pl-2.5 border-l-2 border-fx-blue flex flex-col items-start text-left leading-none cursor-pointer hover:opacity-75 transition group"
+                    title="Ver Perfil y Configuración"
+                  >
+                    <span className="text-[9.5px] text-slate-800 font-mono font-extrabold lowercase group-hover:text-fx-blue transition-colors">@{currentUser.username}</span>
+                    <span className="text-[7.5px] text-slate-400 font-extrabold uppercase tracking-wider mt-0.5">
                       {currentUser.role === 'ADMIN' ? 'ADMIN' : `SOCIO: ${currentUser.plan}`}
                     </span>
-                  </div>
+                  </button>
 
                   <button 
                     onClick={handleLogout}
@@ -1118,7 +1200,18 @@ export default function App() {
             </header>
 
             <AnimatePresence mode="wait">
-              {viewMode === 'ADMIN_BOARD' && currentUser.role === 'ADMIN' ? (
+              {viewMode === 'INSTITUTIONAL_BOARD' && ((currentUser.plan === 'INSTITUTIONAL' && currentUser.status === 'ACTIVE') || currentUser.role === 'ADMIN') ? (
+                /* =================== INSTITUTIONAL PARTNER BOARD =================== */
+                <InstitutionalBoard 
+                  currentUser={currentUser} 
+                  onUpdateConfig={(updatedUser) => setCurrentUser(updatedUser)} 
+                  allUsers={allUsers}
+                  onReloadUsers={async () => {
+                    const fetched = await userStore.getUsers();
+                    setAllUsers(fetched);
+                  }}
+                />
+              ) : viewMode === 'ADMIN_BOARD' && currentUser.role === 'ADMIN' ? (
                 /* =================== ADMIN VIEW PANEL =================== */
                 <motion.main 
                   key="admin"
@@ -1242,8 +1335,6 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-
-                  {/* Columns for User DB management and Code Generator */}
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                     
                     {/* User Database management */}
@@ -1256,6 +1347,83 @@ export default function App() {
                         <Settings size={18} className="text-slate-400 animate-spin-slow" />
                       </div>
 
+                      {/* Espacio de Filtros de Búsqueda */}
+                      <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-100 space-y-3">
+                        <div className="flex flex-col md:flex-row gap-2.5">
+                          {/* Search bar input */}
+                          <div className="relative flex-1">
+                            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input
+                              type="text"
+                              value={adminSearchQuery}
+                              onChange={(e) => setAdminSearchQuery(e.target.value)}
+                              placeholder="Buscar por operador (@usuario) o correo..."
+                              className="w-full text-[11px] pl-8.5 pr-14 py-2.5 rounded-xl bg-white border border-slate-200 outline-none focus:border-brand-lime transition-all text-slate-800 placeholder:text-slate-400"
+                            />
+                            {adminSearchQuery && (
+                              <button
+                                onClick={() => setAdminSearchQuery('')}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-[8px] uppercase font-bold tracking-wider text-slate-400 hover:text-slate-850 bg-slate-100 px-1.5 py-0.5 rounded cursor-pointer"
+                              >
+                                Limpiar
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Filter selectors */}
+                          <div className="flex gap-2 flex-wrap">
+                            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 border border-slate-200 rounded-xl">
+                              <span className="text-[8px] uppercase tracking-wider text-slate-400 font-mono font-bold">Licencia:</span>
+                              <select
+                                value={adminFilterPlan}
+                                onChange={(e) => setAdminFilterPlan(e.target.value)}
+                                className="text-[10px] uppercase tracking-wide bg-transparent outline-none border-none text-slate-700 font-extrabold cursor-pointer h-full"
+                              >
+                                <option value="ALL">Todas</option>
+                                <option value="RETAIL">Retail</option>
+                                <option value="PRO">Pro</option>
+                                <option value="INSTITUTIONAL">Inst.</option>
+                              </select>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 border border-slate-200 rounded-xl">
+                              <span className="text-[8px] uppercase tracking-wider text-slate-400 font-mono font-bold">Estado:</span>
+                              <select
+                                value={adminFilterStatus}
+                                onChange={(e) => setAdminFilterStatus(e.target.value)}
+                                className="text-[10px] uppercase tracking-wide bg-transparent outline-none border-none text-slate-700 font-extrabold cursor-pointer h-full"
+                              >
+                                <option value="ALL">Todos</option>
+                                <option value="ACTIVE">Activo</option>
+                                <option value="PENDING_APPROVAL">Pendiente</option>
+                                <option value="INACTIVE">Inactivo</option>
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Summary / Reset action bar */}
+                        <div className="flex items-center justify-between text-[9px] text-slate-500 font-mono">
+                          <div className="flex items-center gap-1.5">
+                            <Filter size={10} className="text-slate-400" />
+                            <span>Filtrado: Strong <strong>{filteredUsers.length}</strong> de <strong>{allUsers.length}</strong> operadores</span>
+                          </div>
+
+                          {(adminSearchQuery || adminFilterPlan !== 'ALL' || adminFilterStatus !== 'ALL') && (
+                            <button
+                              onClick={() => {
+                                setAdminSearchQuery('');
+                                setAdminFilterPlan('ALL');
+                                setAdminFilterStatus('ALL');
+                              }}
+                              className="text-brand-lime hover:text-slate-900 bg-slate-900 text-[8px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded cursor-pointer transition-colors"
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
                       <div className="overflow-x-auto">
                         <table className="w-full text-left text-xs">
                           <thead>
@@ -1263,98 +1431,136 @@ export default function App() {
                               <th className="pb-3 pl-2">Operador / Correo</th>
                               <th className="pb-3">Licencia</th>
                               <th className="pb-3">Estado</th>
+                              <th className="pb-3">Uso IA</th>
                               <th className="pb-3">Comprobante</th>
                               <th className="pb-3 text-right">Acciones</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-50">
-                            {allUsers.map((user) => {
-                              const isPaypal = user.paymentReceiptUrl?.startsWith('PAYPAL_SUSB_ID:');
-                              const diffDays = user.expiresAt 
-                                ? Math.ceil((new Date(user.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-                                : null;
-                              const isExpiringSoon = user.status === 'ACTIVE' && diffDays !== null && diffDays >= 0 && diffDays <= 5;
+                            {(() => {
+                              const tdToday = new Date();
+                              const currentLocalDateStr = `${tdToday.getFullYear()}-${String(tdToday.getMonth() + 1).padStart(2, '0')}-${String(tdToday.getDate()).padStart(2, '0')}`;
 
-                              return (
-                                <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
-                                  <td className="py-4 pl-2">
-                                    <div className="font-bold text-slate-800 flex items-center gap-1.5 leading-none flex-wrap">
-                                      <span className="font-mono">@{user.username}</span>
-                                      {user.role === 'ADMIN' && (
-                                        <span className="bg-slate-950 text-white rounded px-1 py-0.5 text-[7px] font-bold tracking-widest scale-95 origin-left">ADMIN</span>
-                                      )}
-                                      {isPaypal && (
-                                        <span className="bg-blue-500/10 text-blue-600 rounded px-1.5 py-0.5 text-[7px] font-black tracking-wider uppercase font-mono border border-blue-500/10">
-                                          💳 PAYPAL
+                              if (filteredUsers.length === 0) {
+                                return (
+                                  <tr>
+                                    <td colSpan={6} className="py-12 text-center text-slate-400 font-serif italic font-bold">
+                                      Ningún operador coincide con los filtros aplicados.
+                                    </td>
+                                  </tr>
+                                );
+                              }
+
+                              return filteredUsers.map((user) => {
+                                const isPaypal = user.paymentReceiptUrl?.startsWith('PAYPAL_SUSB_ID:');
+                                const diffDays = user.expiresAt 
+                                  ? Math.ceil((new Date(user.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+                                  : null;
+                                const isExpiringSoon = user.status === 'ACTIVE' && diffDays !== null && diffDays >= 0 && diffDays <= 5;
+                                const userDailyCount = user.dailyUsage && user.dailyUsage.date === currentLocalDateStr ? user.dailyUsage.count : 0;
+
+                                return (
+                                  <tr key={user.id} className="hover:bg-slate-50/30 transition-colors">
+                                    <td className="py-4 pl-2">
+                                      <div className="font-bold text-slate-800 flex items-center gap-1.5 leading-none flex-wrap">
+                                        <span className="font-mono">@{user.username}</span>
+                                        {user.role === 'ADMIN' && (
+                                          <span className="bg-slate-950 text-white rounded px-1 py-0.5 text-[7px] font-bold tracking-widest scale-95 origin-left">ADMIN</span>
+                                        )}
+                                        {isPaypal && (
+                                          <span className="bg-blue-500/10 text-blue-600 rounded px-1.5 py-0.5 text-[7px] font-black tracking-wider uppercase font-mono border border-blue-500/10">
+                                            💳 PAYPAL
+                                          </span>
+                                        )}
+                                      </div>
+                                      <span className="text-[10px] text-slate-400 block mt-1">{user.email}</span>
+                                      {user.referredBy && (
+                                        <span className="inline-flex items-center gap-1 text-[8px] bg-slate-100/75 border border-slate-200/50 text-slate-600 rounded-md px-1.5 py-0.5 font-mono mt-1 font-bold">
+                                          👤 Socio: {user.referredBy}
                                         </span>
                                       )}
-                                    </div>
-                                    <span className="text-[10px] text-slate-400 block mt-1">{user.email}</span>
-                                  </td>
-                                  <td className="py-4">
-                                    <span className={`px-2 py-0.5 text-[8.5px] font-extrabold uppercase rounded-lg tracking-wider ${PLAN_DETAILS[user.plan]?.bgColor || 'bg-slate-100'} ${PLAN_DETAILS[user.plan]?.color === 'brand-lime' ? 'text-slate-900 border border-brand-lime/20 bg-brand-lime/10' : 'text-slate-700'}`}>
-                                      {user.plan}
-                                    </span>
-                                  </td>
-                                  <td className="py-4">
-                                    {user.status === 'ACTIVE' ? (
-                                      <span className="text-emerald-600 font-bold text-[9px] uppercase tracking-widest flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Activo
+                                    </td>
+                                    <td className="py-4">
+                                      <span className={`px-2 py-0.5 text-[8.5px] font-extrabold uppercase rounded-lg tracking-wider ${PLAN_DETAILS[user.plan]?.bgColor || 'bg-slate-100'} ${PLAN_DETAILS[user.plan]?.color === 'brand-lime' ? 'text-slate-900 border border-brand-lime/20 bg-brand-lime/10' : 'text-slate-700'}`}>
+                                        {user.plan}
                                       </span>
-                                    ) : user.status === 'PENDING_APPROVAL' ? (
-                                      <span className="text-amber-500 font-extrabold text-[9px] uppercase tracking-widest flex items-center gap-1 animate-pulse">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Pendiente
-                                      </span>
-                                    ) : (
-                                      <span className="text-slate-400 font-bold text-[9px] uppercase tracking-widest flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-slate-200" /> Inactivo
-                                      </span>
-                                    )}
-                                    {user.expiresAt && (
-                                      <span className="text-[8px] text-slate-400 block font-mono mt-0.5">Expira: {new Date(user.expiresAt).toLocaleDateString()}</span>
-                                    )}
-                                    {isExpiringSoon && (
-                                      <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-700 border border-amber-500/15 rounded px-1.5 py-0.5 text-[6.5px] font-black uppercase tracking-wider mt-1 w-fit animate-pulse font-mono">
-                                        ⚠️ Vence en {diffDays}d
-                                      </span>
-                                    )}
-                                    {user.status === 'ACTIVE' && diffDays !== null && diffDays < 0 && (
-                                      <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-700 border border-rose-500/15 rounded px-1.5 py-0.5 text-[6.5px] font-black uppercase tracking-wider mt-1 w-fit font-mono">
-                                        🚨 EXPIRADO
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td className="py-4 font-mono text-[9.5px]">
-                                    {isPaypal ? (
-                                      <span className="text-blue-600 bg-blue-50/50 px-2.5 py-1.5 rounded-[6px] font-black block max-w-[124px] border border-blue-500/10 text-center text-[8px] uppercase tracking-wide">
-                                        Suscripción Autopago
-                                      </span>
-                                    ) : user.paymentReceiptUrl ? (
-                                      user.paymentReceiptUrl.startsWith('data:image') ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => setAdminLightboxImage(user.paymentReceiptUrl!)}
-                                          className="text-white bg-slate-900 border border-slate-800 hover:bg-slate-800 px-2 py-1.5 rounded-[6px] font-extrabold block w-full max-w-[124px] cursor-pointer text-center text-[8px] font-sans uppercase transition-colors"
-                                        >
-                                          📷 Ver Captura
-                                        </button>
+                                    </td>
+                                    <td className="py-4">
+                                      {user.status === 'ACTIVE' ? (
+                                        <span className="text-emerald-600 font-bold text-[9px] uppercase tracking-widest flex items-center gap-1">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Activo
+                                        </span>
+                                      ) : user.status === 'PENDING_APPROVAL' ? (
+                                        <span className="text-amber-500 font-extrabold text-[9px] uppercase tracking-widest flex items-center gap-1 animate-pulse">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Pendiente
+                                        </span>
                                       ) : (
-                                        <span 
-                                          className="text-brand-lime bg-slate-950 px-2 py-1.5 rounded-[6px] font-bold block max-w-[124px] truncate cursor-pointer hover:bg-slate-900 border border-brand-lime/20 text-center text-[8.5px]" 
-                                          title={user.paymentReceiptUrl}
-                                          onClick={() => {
-                                            if (user.paymentReceiptUrl) {
-                                              navigator.clipboard.writeText(user.paymentReceiptUrl);
-                                            }
-                                          }}
-                                        >
-                                          HASH: {user.paymentReceiptUrl.substring(0, 10)}...
+                                        <span className="text-slate-400 font-bold text-[9px] uppercase tracking-widest flex items-center gap-1">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-slate-200" /> Inactivo
                                         </span>
-                                      )
-                                    ) : (
-                                      <span className="text-slate-300 italic">—</span>
-                                    )}
-                                  </td>
+                                      )}
+                                      {user.expiresAt && (
+                                        <span className="text-[8px] text-slate-400 block font-mono mt-0.5">Expira: {new Date(user.expiresAt).toLocaleDateString()}</span>
+                                      )}
+                                      {isExpiringSoon && (
+                                        <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-700 border border-amber-500/15 rounded px-1.5 py-0.5 text-[6.5px] font-black uppercase tracking-wider mt-1 w-fit animate-pulse font-mono">
+                                          ⚠️ Vence en {diffDays}d
+                                        </span>
+                                      )}
+                                      {user.status === 'ACTIVE' && diffDays !== null && diffDays < 0 && (
+                                        <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-700 border border-rose-500/15 rounded px-1.5 py-0.5 text-[6.5px] font-black uppercase tracking-wider mt-1 w-fit font-mono">
+                                          🚨 EXPIRADO
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="py-4">
+                                      <div className="space-y-1">
+                                        <div className="flex items-center gap-1 font-mono text-[10.5px] text-slate-700 font-bold">
+                                          <TrendingUp size={11} className="text-slate-400" />
+                                          <span>Total: <strong className="text-slate-900">{user.totalAnalysesCount || 0}</strong></span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className={`text-[8px] font-mono rounded px-1.5 py-0.5 font-bold uppercase ${
+                                            userDailyCount > 0 
+                                              ? 'bg-emerald-50 text-emerald-600 border border-emerald-100/50' 
+                                              : 'bg-slate-100 text-slate-400'
+                                          }`}>
+                                            Hoy: {userDailyCount}/5
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td className="py-4 font-mono text-[9.5px]">
+                                      {isPaypal ? (
+                                        <span className="text-blue-600 bg-blue-50/50 px-2.5 py-1.5 rounded-[6px] font-black block max-w-[124px] border border-blue-500/10 text-center text-[8px] uppercase tracking-wide">
+                                          Suscripción Autopago
+                                        </span>
+                                      ) : user.paymentReceiptUrl ? (
+                                        user.paymentReceiptUrl.startsWith('data:image') ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => setAdminLightboxImage(user.paymentReceiptUrl!)}
+                                            className="text-white bg-slate-900 border border-slate-800 hover:bg-slate-800 px-2 py-1.5 rounded-[6px] font-extrabold block w-full max-w-[124px] cursor-pointer text-center text-[8px] font-sans uppercase transition-colors"
+                                          >
+                                            📷 Ver Captura
+                                          </button>
+                                        ) : (
+                                          <span 
+                                            className="text-brand-lime bg-slate-950 px-2 py-1.5 rounded-[6px] font-bold block max-w-[124px] truncate cursor-pointer hover:bg-slate-900 border border-brand-lime/20 text-center text-[8.5px]" 
+                                            title={user.paymentReceiptUrl}
+                                            onClick={() => {
+                                              if (user.paymentReceiptUrl) {
+                                                navigator.clipboard.writeText(user.paymentReceiptUrl);
+                                              }
+                                            }}
+                                          >
+                                            HASH: {user.paymentReceiptUrl.substring(0, 10)}...
+                                          </span>
+                                        )
+                                      ) : (
+                                        <span className="text-slate-300 italic">—</span>
+                                      )}
+                                    </td>
                                   <td className="py-4 text-right pr-2">
                                     <div className="flex justify-end gap-1.5 flex-wrap">
                                       {user.status === 'PENDING_APPROVAL' && (
@@ -1482,6 +1688,7 @@ export default function App() {
                                 </tr>
                               );
                             })}
+                          )()}
                           </tbody>
                         </table>
                       </div>
@@ -2250,34 +2457,45 @@ export default function App() {
                                         </div>
                                       </div>
                                     ) : (
-                                      <div className="relative border-2 border-dashed border-slate-200 hover:border-slate-300 rounded-2xl transition duration-200 bg-slate-50 hover:bg-slate-100/70 flex flex-col items-center justify-center p-5 text-center group">
-                                        <input
-                                          type="file"
-                                          accept="image/*"
-                                          onChange={handleReceiptFileChange}
-                                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                                          disabled={receiptFileLoading}
-                                        />
-                                        {receiptFileLoading ? (
-                                          <div className="flex flex-col items-center space-y-2 pb-1">
-                                            <Loader2 className="w-5 h-5 text-brand-navy animate-spin" />
-                                            <span className="text-[9px] uppercase font-bold tracking-wider text-slate-500 font-mono">Procesando imagen...</span>
-                                          </div>
-                                        ) : (
-                                          <div className="space-y-1.5 flex flex-col items-center">
-                                            <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-slate-400 group-hover:scale-105 transition duration-150 shadow-sm border border-slate-100">
-                                              <Upload size={13} className="text-slate-500 animate-pulse" />
+                                      <div className="space-y-2.5">
+                                        <div className="relative border-2 border-dashed border-slate-200 hover:border-slate-300 rounded-2xl transition duration-200 bg-slate-50 hover:bg-slate-100/70 flex flex-col items-center justify-center p-5 text-center group">
+                                          <input
+                                            type="file"
+                                            accept="image/*"
+                                            onChange={handleReceiptFileChange}
+                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                            disabled={receiptFileLoading}
+                                          />
+                                          {receiptFileLoading ? (
+                                            <div className="flex flex-col items-center space-y-2 pb-1">
+                                              <Loader2 className="w-5 h-5 text-brand-navy animate-spin" />
+                                              <span className="text-[9px] uppercase font-bold tracking-wider text-slate-500 font-mono">Procesando imagen...</span>
                                             </div>
-                                            <div>
-                                              <span className="text-[9.5px] font-bold text-slate-700 block uppercase font-mono">
-                                                Sube tu foto, captura o comprobante
-                                              </span>
-                                              <span className="text-[7.5px] uppercase tracking-wide text-slate-400 font-mono font-bold block mt-0.5">
-                                                Arrastra el archivo o haz clic aquí (PNG, JPG, JPEG)
-                                              </span>
+                                          ) : (
+                                            <div className="space-y-1.5 flex flex-col items-center">
+                                              <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-slate-400 group-hover:scale-105 transition duration-150 shadow-sm border border-slate-100">
+                                                <Upload size={13} className="text-slate-500 animate-pulse" />
+                                              </div>
+                                              <div>
+                                                <span className="text-[9.5px] font-bold text-slate-700 block uppercase font-mono">
+                                                  Sube tu foto, captura o comprobante
+                                                </span>
+                                                <span className="text-[7.5px] uppercase tracking-wide text-slate-400 font-mono font-bold block mt-0.5">
+                                                  Arrastra el archivo o haz clic aquí (PNG, JPG, JPEG)
+                                                </span>
+                                              </div>
                                             </div>
-                                          </div>
-                                        )}
+                                          )}
+                                        </div>
+
+                                        <button
+                                          type="button"
+                                          onClick={() => setIsReceiptCameraOpen(true)}
+                                          className="w-full py-2.5 px-4 bg-slate-900 border border-slate-800 hover:bg-black text-[#CCFF00] hover:text-white rounded-xl text-[9px] font-bold font-mono uppercase tracking-wider flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer"
+                                        >
+                                          <Camera size={12} />
+                                          Tomar Foto con la Cámara (Opción Móvil)
+                                        </button>
                                       </div>
                                     )}
                                   </div>
@@ -2418,6 +2636,21 @@ export default function App() {
                           accept="image/*"
                         />
                       </div>
+
+                      {/* Camera capture trigger for telemetry */}
+                      {!image && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsTelemetryCameraOpen(true);
+                          }}
+                          className="w-full py-2.5 px-4 bg-slate-900 border border-slate-800 hover:bg-black text-[#CCFF00] hover:text-white rounded-2xl text-[9px] font-bold font-mono uppercase tracking-wider flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer"
+                        >
+                          <Camera size={12} />
+                          ¿En móvil? Tomar foto de pantalla o gráfico
+                        </button>
+                      )}
 
                       {/* Ventana Temporal Config */}
                       <div className="bg-slate-50/70 border border-slate-100 rounded-3xl p-5 space-y-4 shadow-sm animate-[fadeIn_0.3s_ease-out]">
@@ -2604,25 +2837,27 @@ export default function App() {
                                 </div>
                               </div>
 
-                              <div className="flex justify-end">
-                                <button
-                                  onClick={handleCopy}
-                                  className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all duration-300
-                                    ${copied 
-                                      ? 'bg-green-500 text-white' 
-                                      : 'bg-brand-navy text-white hover:bg-slate-800 shadow-lg shadow-slate-900/10'}`}
-                                >
-                                  {copied ? (
-                                    <>
-                                      <Check size={14} /> Copiado
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Copy size={14} /> Copiar Análisis
-                                    </>
-                                  )}
-                                </button>
-                              </div>
+                              {(currentUser.plan === 'INSTITUTIONAL' || currentUser.role === 'ADMIN') && (
+                                <div className="flex justify-end">
+                                  <button
+                                    onClick={handleCopy}
+                                    className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all duration-300
+                                      ${copied 
+                                        ? 'bg-green-500 text-white' 
+                                        : 'bg-brand-navy text-white hover:bg-slate-800 shadow-lg shadow-slate-900/10'}`}
+                                  >
+                                    {copied ? (
+                                      <>
+                                        <Check size={14} /> Copiado
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Copy size={14} /> Copiar Análisis
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              )}
 
                               <div className="pt-8 border-t border-slate-50 flex items-center justify-between">
                                 <div className="flex items-center gap-3 text-[10px] text-slate-400 uppercase font-bold tracking-widest">
@@ -2896,6 +3131,96 @@ export default function App() {
                     </div>
                   </motion.div>
                 </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Camera Modals for Mobile/Wired Photos */}
+            <CameraModal
+              isOpen={isReceiptCameraOpen}
+              onClose={() => setIsReceiptCameraOpen(false)}
+              onCapture={handleReceiptCameraCapture}
+              title="Escáner: Capturar Comprobante de Pago"
+            />
+
+            <CameraModal
+              isOpen={isTelemetryCameraOpen}
+              onClose={() => setIsTelemetryCameraOpen(false)}
+              onCapture={handleTelemetryCameraCapture}
+              title="Escáner: Capturar Gráfico Visual o Telemetría"
+            />
+
+            <ProfileModal
+              isOpen={isProfileModalOpen}
+              onClose={() => setIsProfileModalOpen(false)}
+              currentUser={currentUser}
+              onUpdateUser={(updatedUser) => setCurrentUser(updatedUser)}
+              handleLogout={handleLogout}
+            />
+
+            {/* Expiration Warning Popup Dialog Modal */}
+            <AnimatePresence>
+              {showExpirationAlertPopup && currentUser && currentUser.expiresAt && (
+                <div id="expiration-alert-popup-overlay" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                    transition={{ duration: 0.25, ease: "easeOut" }}
+                    className="w-full max-w-md bg-white border border-amber-200 rounded-[28px] p-6 shadow-2xl relative overflow-hidden"
+                  >
+                    {/* Pulsating glowing amber bar on top */}
+                    <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-400 via-[#CCFF00] to-amber-500 animate-[pulse_2s_infinite]" />
+
+                    <div className="flex items-center gap-2 mb-4 text-amber-600">
+                      <span className="text-xl">🚨</span>
+                      <span className="text-[9px] font-mono font-extrabold uppercase tracking-widest text-amber-700">
+                        Alerta de Vencimiento de Licencia
+                      </span>
+                    </div>
+
+                    <h3 className="text-base font-bold text-slate-900 tracking-tight mb-2 font-sans">
+                      Tu membresía está por terminar
+                    </h3>
+
+                    {(() => {
+                      const expiryDate = new Date(currentUser.expiresAt);
+                      const today = new Date();
+                      const d1 = Date.UTC(expiryDate.getFullYear(), expiryDate.getMonth(), expiryDate.getDate());
+                      const d2 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+                      const diffDays = Math.ceil((d1 - d2) / (1000 * 60 * 60 * 24));
+                      
+                      return (
+                        <p className="text-xs text-slate-500 leading-relaxed mb-5 font-sans">
+                          Estimado socio <span className="font-semibold text-slate-800 lowercase">@{currentUser.username}</span>, te quedan únicamente <strong className="text-amber-600 underline font-mono text-sm">{diffDays <= 0 ? '0' : diffDays} {diffDays === 1 ? 'día' : 'días'}</strong> de tu suscripción de nivel <span className="uppercase font-bold text-slate-700 font-mono text-[10px] bg-slate-100 px-1 py-0.5 rounded">{currentUser.plan}</span>. Recuerda renovar para no perder accesos directos al modelado algorítmico de la mesa operativa.
+                        </p>
+                      );
+                    })()}
+
+                    <div className="flex gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          sessionStorage.setItem('dismissed_expiration_popup_v2', 'true');
+                          setShowExpirationAlertPopup(false);
+                          setIsProfileModalOpen(true);
+                        }}
+                        className="flex-grow py-2.5 px-4 bg-slate-900 hover:bg-black text-[#CCFF00] rounded-xl text-[10px] font-mono font-bold uppercase tracking-wider transition text-center cursor-pointer"
+                      >
+                        Verificar & Renovar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          sessionStorage.setItem('dismissed_expiration_popup_v2', 'true');
+                          setShowExpirationAlertPopup(false);
+                        }}
+                        className="py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-[10px] font-mono font-bold uppercase tracking-wider transition text-center cursor-pointer border border-slate-200"
+                      >
+                        Entendido
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
               )}
             </AnimatePresence>
           </>

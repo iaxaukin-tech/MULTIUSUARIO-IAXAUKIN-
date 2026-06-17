@@ -1,6 +1,6 @@
 {
   "name": "Remix: multiusario IA XAU KIN version manual ",
   "description": "Plataforma de análisis institucional de XAUUSD impulsada por IA XAU KIN para traders profesionales.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

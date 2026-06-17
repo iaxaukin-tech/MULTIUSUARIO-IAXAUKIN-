@@ -19,6 +19,12 @@ export interface User {
     date: string; // Formatted local date YYYY-MM-DD
     count: number;
   };
+  referredBy?: string;
+  referralCode?: string;
+  webhookUrl?: string;
+  telegramChannelId?: string;
+  telegramBotToken?: string;
+  discordWebhookUrl?: string;
 }
 
 export interface ActivationCode {

@@ -74,11 +74,37 @@ service cloud.firestore {
           )
           && (
             !('totalAnalysesCount' in data) || data.totalAnalysesCount is int
+          )
+          && (
+            !('referredBy' in data) || data.referredBy is string
+          )
+          && (
+            !('referralCode' in data) || data.referralCode is string
+          )
+          && (
+            !('webhookUrl' in data) || data.webhookUrl is string
+          )
+          && (
+            !('telegramChannelId' in data) || data.telegramChannelId is string
+          )
+          && (
+            !('telegramBotToken' in data) || data.telegramBotToken is string
+          )
+          && (
+            !('discordWebhookUrl' in data) || data.discordWebhookUrl is string
           );
       }
 
       allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
-      allow list: if isAdmin(); // Only admins can list users to prevent PII harvesting
+      allow list: if isAdmin() || (
+        isSignedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.plan == 'INSTITUTIONAL'
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'ACTIVE'
+        && (
+          resource.data.referredBy == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.referralCode
+          || resource.data.referredBy == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.username
+        )
+      );
 
       // Standard users can initialize their user profile
       allow create: if isSignedIn() 
@@ -124,6 +150,15 @@ service cloud.firestore {
             // Action 5: Reset/initialize dailyUsage cache
             (
               incoming().diff(existing()).affectedKeys().hasOnly(['dailyUsage'])
+            ) ||
+            // Action 6: Save community integrations / customize referral code for Institutional socio
+            (
+              incoming().diff(existing()).affectedKeys().hasAny(['referralCode', 'webhookUrl', 'telegramChannelId', 'telegramBotToken', 'discordWebhookUrl'])
+              && incoming().diff(existing()).affectedKeys().hasOnly(['referralCode', 'webhookUrl', 'telegramChannelId', 'telegramBotToken', 'discordWebhookUrl'])
+            ) ||
+            // Action 7: Retrospectively save affiliate referral code
+            (
+              incoming().diff(existing()).affectedKeys().hasOnly(['referredBy'])
             )
           )
         )

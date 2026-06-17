@@ -16,7 +16,7 @@ import { User, ActivationCode, SubscriptionPlan, SubscriptionStatus } from '../t
 
 export const userStore = {
   // Sync a direct Google Sign-in or email-registered user to database
-  async syncGoogleUser(firebaseUser: any, customUsername?: string): Promise<User> {
+  async syncGoogleUser(firebaseUser: any, customUsername?: string, referredBy?: string): Promise<User> {
     const docRef = doc(db, 'users', firebaseUser.uid);
     const path = `users/${firebaseUser.uid}`;
     
@@ -56,6 +56,8 @@ export const userStore = {
           ? customUsername.trim().replace(/\s+/g, '_').toLowerCase()
           : (firebaseUser.displayName?.replace(/\s+/g, '_').toLowerCase() || `op_${Math.random().toString(36).substring(2, 7)}`);
 
+        const pendingRef = sessionStorage.getItem('xau_kin_pending_referral') || localStorage.getItem('xau_kin_pending_referral') || '';
+
         const newUser: User = {
           id: firebaseUser.uid,
           username: cleanUsername,
@@ -64,6 +66,8 @@ export const userStore = {
           plan: isOwnerAdmin ? 'INSTITUTIONAL' : 'RETAIL', // Default to RETAIL on registration
           status: isOwnerAdmin ? 'ACTIVE' : 'INACTIVE',
           joinedAt: new Date().toISOString(),
+          referredBy: (referredBy || pendingRef || '').trim().toLowerCase(),
+          referralCode: cleanUsername, // Default is their own username!
         };
 
         await setDoc(docRef, newUser);
@@ -306,8 +310,9 @@ export const userStore = {
       const userSnap = await getDoc(userDocRef);
       let newCount = 1;
       let newTotalCount = 1;
+      let userData: any = null;
       if (userSnap.exists()) {
-        const userData = userSnap.data();
+        userData = userSnap.data();
         if (userData.dailyUsage && userData.dailyUsage.date === localDateStr) {
           newCount = (userData.dailyUsage.count || 0) + 1;
         }
@@ -322,6 +327,64 @@ export const userStore = {
           count: newCount
         }
       });
+
+      // Dispatch Webhook alerts asynchronously if integrations exist on user
+      if (userData) {
+        const username = userData.username || 'operador';
+        // Non-blocking trigger so we do not freeze user interface
+        (async () => {
+          // Discord Webhook Dispatch
+          if (userData.discordWebhookUrl) {
+            try {
+              await fetch(userData.discordWebhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  content: `📊 **IA XAU KIN — REPORTE DE MERCADO DISPATCHADO** (@${username})\n\n${reportText.slice(0, 1800)}${reportText.length > 1800 ? '...' : ''}`
+                })
+              });
+            } catch (e) {
+              console.warn("Discord Webhook transmission failed:", e);
+            }
+          }
+
+          // Generic custom Webhook
+          if (userData.webhookUrl) {
+            try {
+              await fetch(userData.webhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  event: "analysis_created",
+                  username: username,
+                  timestamp: new Date().toISOString(),
+                  analysisText: reportText
+                })
+              });
+            } catch (e) {
+              console.warn("Custom Webhook transmission failed:", e);
+            }
+          }
+
+          // Telegram Bot and Chat ID Channel Forwarder
+          if (userData.telegramBotToken && userData.telegramChannelId) {
+            try {
+              const url = `https://api.telegram.org/bot${userData.telegramBotToken}/sendMessage`;
+              await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: userData.telegramChannelId,
+                  text: `📊 *IA XAU KIN — REPORTE DE MERCADO DISPATCHADO* (@${username})\n\n${reportText.slice(0, 3850)}${reportText.length > 3850 ? '...' : ''}`,
+                  parse_mode: 'Markdown'
+                })
+              });
+            } catch (e) {
+              console.warn("Telegram Dispatch failed:", e);
+            }
+          }
+        })().catch(err => console.error("Async webhook transmission thread error:", err));
+      }
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `analysisHistory/${analysisId}`);
     }
@@ -484,6 +547,55 @@ export const userStore = {
       }, { merge: true });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
+    }
+  },
+
+  // Update institutional configurations (affiliate code & integration webhooks)
+  async updateInstitutionalConfig(
+    userId: string,
+    config: {
+      referralCode?: string;
+      webhookUrl?: string;
+      telegramChannelId?: string;
+      telegramBotToken?: string;
+      discordWebhookUrl?: string;
+    }
+  ): Promise<User> {
+    const path = `users/${userId}`;
+    const docRef = doc(db, 'users', userId);
+    try {
+      const payload: Partial<User> = {};
+      if (config.referralCode !== undefined) payload.referralCode = config.referralCode.trim().toLowerCase();
+      if (config.webhookUrl !== undefined) payload.webhookUrl = config.webhookUrl.trim();
+      if (config.telegramChannelId !== undefined) payload.telegramChannelId = config.telegramChannelId.trim();
+      if (config.telegramBotToken !== undefined) payload.telegramBotToken = config.telegramBotToken.trim();
+      if (config.discordWebhookUrl !== undefined) payload.discordWebhookUrl = config.discordWebhookUrl.trim();
+
+      await updateDoc(docRef, payload);
+      const snap = await getDoc(docRef);
+      return snap.data() as User;
+    } catch (err) {
+      return handleFirestoreError(err, OperationType.WRITE, path);
+    }
+  },
+
+  // Fetch all users referred by an institutional partner's code
+  async getReferredUsers(referralCode: string): Promise<User[]> {
+    const path = 'users';
+    try {
+      const cleanRefCode = referralCode.trim().toLowerCase();
+      const q = query(
+        collection(db, 'users'),
+        where('referredBy', '==', cleanRefCode)
+      );
+      const querySnapshot = await getDocs(q);
+      const results: User[] = [];
+      querySnapshot.forEach((doc) => {
+        results.push(doc.data() as User);
+      });
+      return results;
+    } catch (err) {
+      return handleFirestoreError(err, OperationType.LIST, path);
     }
   }
 };

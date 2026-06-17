@@ -26,7 +26,13 @@
           },
           "required": ["date", "count"],
           "description": "Daily usage limit status details"
-        }
+        },
+        "referredBy": { "type": "string", "description": "The referral code of the affiliate who invited this operator" },
+        "referralCode": { "type": "string", "description": "Custom affiliate/referral code of this user" },
+        "webhookUrl": { "type": "string", "description": "Destination Webhook URL" },
+        "telegramChannelId": { "type": "string", "description": "Telegram Channel ID for alert transmission" },
+        "telegramBotToken": { "type": "string", "description": "Custom Telegram Bot Token used to dispatch reports" },
+        "discordWebhookUrl": { "type": "string", "description": "Custom Discord Webhook URL for alert notification" }
       },
       "required": ["id", "username", "email", "role", "plan", "status", "joinedAt"]
     },

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Lock, 
@@ -25,7 +25,8 @@ import {
   ShieldAlert,
   Clock,
   Target,
-  Briefcase
+  Briefcase,
+  Calendar
 } from 'lucide-react';
 import { 
   signInWithPopup, 
@@ -64,6 +65,30 @@ export const Login = ({ onLogin, navigateTo }: LoginProps) => {
   const [showPassword, setShowPassword] = useState(false);
   const [usernameType, setUsernameType] = useState<'AUTO' | 'CUSTOM'>('AUTO');
 
+  // Referral / Affiliate Tracking States
+  const [urlReferralCode, setUrlReferralCode] = useState<string>('');
+  const [manualReferralCode, setManualReferralCode] = useState<string>('');
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const refParam = params.get('ref');
+    if (refParam) {
+      const parsed = refParam.trim().toLowerCase();
+      setUrlReferralCode(parsed);
+      sessionStorage.setItem('xau_kin_pending_referral', parsed);
+      localStorage.setItem('xau_kin_pending_referral', parsed);
+      
+      // Auto-focus on community registration
+      setIsRegister(true);
+      setCurrentView('AUTH');
+    } else {
+      const stored = sessionStorage.getItem('xau_kin_pending_referral') || localStorage.getItem('xau_kin_pending_referral');
+      if (stored) {
+        setUrlReferralCode(stored);
+      }
+    }
+  }, []);
+
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     setError(null);
@@ -72,7 +97,8 @@ export const Login = ({ onLogin, navigateTo }: LoginProps) => {
       provider.setCustomParameters({ prompt: 'select_account' });
       
       const result = await signInWithPopup(auth, provider);
-      const userPayload = await userStore.syncGoogleUser(result.user);
+      const referralValue = urlReferralCode || manualReferralCode;
+      const userPayload = await userStore.syncGoogleUser(result.user, undefined, referralValue);
       
       // Persist login state
       localStorage.setItem('xau_kin_is_logged_in', 'true');
@@ -145,7 +171,8 @@ export const Login = ({ onLogin, navigateTo }: LoginProps) => {
         }
 
         const result = await createUserWithEmailAndPassword(auth, email, password);
-        const userPayload = await userStore.syncGoogleUser(result.user, cleanName);
+        const referralValue = urlReferralCode || manualReferralCode;
+        const userPayload = await userStore.syncGoogleUser(result.user, cleanName, referralValue);
         
         localStorage.setItem('xau_kin_is_logged_in', 'true');
         localStorage.setItem('xau_kin_remembered_user', userPayload.id);
@@ -299,7 +326,7 @@ export const Login = ({ onLogin, navigateTo }: LoginProps) => {
                   <button 
                     id="cta-register-landing-main"
                     onClick={() => {
-                      setIsRegister(true);
+                      setIsRegister(false);
                       setError(null);
                       setCurrentView('AUTH');
                     }}
@@ -479,18 +506,31 @@ export const Login = ({ onLogin, navigateTo }: LoginProps) => {
                 <p className="text-[10.5px] text-slate-500 max-w-sm mx-auto leading-normal">
                   Crea tu perfil de operador de manera gratuita. Los planes detallados y costos de suscripción se presentan formalmente una vez dentro del panel administrativo.
                 </p>
-                <button
-                  id="cta-register-landing-footer"
-                  onClick={() => {
-                    setIsRegister(true);
-                    setError(null);
-                    setCurrentView('AUTH');
-                  }}
-                  className="bg-slate-900 hover:bg-slate-950 text-white font-bold py-2.5 px-5 rounded-xl text-[10px] uppercase tracking-widest transition-all duration-300 shadow-sm cursor-pointer inline-flex items-center gap-1.5 focus:outline-none"
-                >
-                  <UserPlus size={12} className="text-brand-lime" />
-                  Registrar mi Cuenta
-                </button>
+                <div className="flex flex-col sm:flex-row justify-center items-center gap-3 pt-1">
+                  <button
+                    id="cta-register-landing-footer"
+                    onClick={() => {
+                      setIsRegister(true);
+                      setError(null);
+                      setCurrentView('AUTH');
+                    }}
+                    className="w-full sm:w-auto bg-slate-900 hover:bg-slate-950 text-white font-bold py-2.5 px-5 rounded-xl text-[10px] uppercase tracking-widest transition-all duration-300 shadow-sm cursor-pointer inline-flex items-center justify-center gap-1.5 focus:outline-none"
+                  >
+                    <UserPlus size={12} className="text-[#CCFF00]" />
+                    Registrar mi Cuenta
+                  </button>
+
+                  <a
+                    href="https://calendar.google.com/calendar/appointments/schedules/AcZssZ1tBTLy-bQVAI8Tv9Zfu85DwRGPF4c7DrsQiuWFKZCoh-NQUA0lUzUAqB1RKxxa7zUjW24oyW5g?gv=true"
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="w-full sm:w-auto bg-slate-900 hover:bg-slate-950 text-white font-bold py-2.5 px-5 rounded-xl text-[10px] uppercase tracking-widest transition-all duration-300 shadow-sm cursor-pointer inline-flex items-center justify-center gap-1.5 focus:outline-none text-center"
+                    id="cta-connect-team-calendar-btn"
+                  >
+                    <Calendar size={12} className="text-[#CCFF00]" />
+                    Conectar Equipo
+                  </a>
+                </div>
               </div>
 
             </motion.main>
@@ -574,6 +614,28 @@ export const Login = ({ onLogin, navigateTo }: LoginProps) => {
                             El sistema generará automáticamente un ID único y anónimo de operador (ej: <code className="font-mono bg-slate-200/50 px-1 rounded text-slate-700">@op_f28da</code>) para proteger la integridad y privacidad de tus operaciones en red.
                           </p>
                         </div>
+
+                        {urlReferralCode ? (
+                          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2.5">
+                            <span className="text-emerald-500 text-sm">🤝</span>
+                            <div className="text-[10px] font-sans font-medium text-emerald-800 text-left">
+                              Registrándote en la comunidad de: <strong className="font-mono text-emerald-950 font-bold bg-white/70 px-1.5 py-0.5 rounded border border-emerald-200/50">@{urlReferralCode}</strong>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            <label className="block text-[8.5px] uppercase tracking-wider text-slate-400 font-mono font-bold ml-1">
+                              Código de Invitación / Comunidad (Opcional)
+                            </label>
+                            <input
+                              type="text"
+                              value={manualReferralCode}
+                              onChange={(e) => setManualReferralCode(e.target.value)}
+                              placeholder="Fórmula de Referido (p. ej. ib_trader10)"
+                              className="w-full text-[11px] font-mono pl-3.5 pr-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-brand-lime transition-all text-slate-800 lowercase placeholder:text-slate-400"
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
 
