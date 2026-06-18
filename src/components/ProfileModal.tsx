@@ -14,10 +14,11 @@ import {
   LogOut,
   Sparkles,
   CheckCircle2,
-  Lock
+  Lock,
+  CreditCard
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { User, PLAN_DETAILS } from '../types';
+import { User, PLAN_DETAILS, SubscriptionPlan } from '../types';
 import { auth, db } from '../lib/firebase';
 import { updatePassword, sendPasswordResetEmail, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { userStore } from '../utils/userStore';
@@ -29,18 +30,22 @@ interface ProfileModalProps {
   currentUser: User;
   onUpdateUser: (updatedUser: User) => void;
   handleLogout: () => void;
+  onSelectPlan?: (plan: SubscriptionPlan) => void;
+  initialTab?: 'profile' | 'password' | 'calendar' | 'membership';
 }
 
-type ActiveTab = 'profile' | 'password' | 'calendar';
+type ActiveTab = 'profile' | 'password' | 'calendar' | 'membership';
 
 export const ProfileModal: React.FC<ProfileModalProps> = ({
   isOpen,
   onClose,
   currentUser,
   onUpdateUser,
-  handleLogout
+  handleLogout,
+  onSelectPlan,
+  initialTab = 'profile'
 }) => {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('profile');
+  const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab);
   
   // Username editing state
   const [isEditingUsername, setIsEditingUsername] = useState(false);
@@ -71,8 +76,11 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
       setConfirmPassword('');
       setResetEmailSent(false);
       setShowRecentLoginWarning(false);
+      if (initialTab) {
+        setActiveTab(initialTab);
+      }
     }
-  }, [isOpen, currentUser]);
+  }, [isOpen, currentUser, initialTab]);
 
   const handleUsernameSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -252,6 +260,19 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                   >
                     <UserIcon size={12} />
                     Panel de Operador
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('membership')}
+                    className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl text-[9px] font-bold uppercase tracking-wider transition font-mono shrink-0 ${
+                      activeTab === 'membership'
+                        ? 'bg-slate-950 text-[#CCFF00] shadow-md shadow-black/10'
+                        : 'text-slate-500 hover:text-black hover:bg-slate-200/60'
+                    }`}
+                  >
+                    <CreditCard size={12} />
+                    Membresías & Planes
                   </button>
 
                   <button
@@ -466,6 +487,189 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                           </div>
                         ))}
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 1.5 MEMBERSHIP ACTIONS & INFORMATION TAB */}
+                {activeTab === 'membership' && (
+                  <div className="space-y-6 animate-[fadeIn_0.2s_ease-out]">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div>
+                        <h4 className="text-base font-bold text-slate-800 tracking-tight font-sans">
+                          Gestión de Membresías y Licencias
+                        </h4>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Verifica el estado de tu licencia actual, adquiere un nuevo plan o sube de nivel tu membresía.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Current Plan Summary Card */}
+                    <div className="bg-slate-950 text-white rounded-[2rem] p-6 border border-slate-850 shadow-xl relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-brand-lime opacity-10 rounded-full blur-3xl -mr-10 -mt-10" />
+                      <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                        <div className="space-y-2">
+                          <span className="px-2.5 py-0.5 rounded text-[8px] font-mono font-extrabold uppercase tracking-wider bg-brand-lime/10 border border-brand-lime/20 text-brand-lime w-fit block">
+                            Tu Plan Actual
+                          </span>
+                          <h5 className="text-2xl font-serif italic text-white flex items-center gap-2">
+                            <span>{PLAN_DETAILS[currentUser.plan]?.name || currentUser.plan}</span>
+                            {currentUser.status === 'ACTIVE' && (
+                              <span className="w-2.5 h-2.5 bg-brand-lime rounded-full inline-block animate-pulse" title="Licencia Activa" />
+                            )}
+                          </h5>
+                          
+                          <div className="flex flex-wrap gap-x-4 gap-y-2 text-[10px] text-slate-400 font-sans pt-1">
+                            <div className="flex items-center gap-1">
+                              <span className="text-slate-500">Estado:</span>
+                              <strong className={`uppercase ${currentUser.status === 'ACTIVE' ? 'text-brand-lime' : 'text-amber-400'}`}>{currentUser.status}</strong>
+                            </div>
+                            {currentUser.expiresAt && (
+                              <div className="flex items-center gap-1">
+                                <span className="text-slate-500">Expira el:</span>
+                                <strong className="text-slate-200">{new Date(currentUser.expiresAt).toLocaleDateString()}</strong>
+                              </div>
+                            )}
+                            {daysRemaining !== null && (
+                              <div className="flex items-center gap-1">
+                                <span className="text-slate-500">Tiempo restante:</span>
+                                <strong className={daysRemaining <= 0 ? "text-red-500" : daysRemaining <= 5 ? "text-amber-500 animate-pulse" : "text-brand-lime"}>
+                                  {daysRemaining <= 0 ? 'Expirado' : `${daysRemaining} días`}
+                                </strong>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Referral details inside membership tab */}
+                        <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl md:w-80 space-y-2 text-left">
+                          <div className="text-[8px] font-mono font-bold uppercase tracking-widest text-slate-400">
+                            Código de Afiliado & Invitación
+                          </div>
+                          {currentUser.referredBy && (
+                            <div className="flex justify-between items-center text-[9px] border-b border-slate-850 pb-1.5 pt-0.5">
+                              <span className="text-slate-500 font-sans">Referido por:</span>
+                              <span className="font-mono text-brand-lime font-bold">@{currentUser.referredBy}</span>
+                            </div>
+                          )}
+                          <div className="flex flex-col gap-1 text-[9px]">
+                            <span className="text-slate-500">Tu código de referencia:</span>
+                            <div className="flex items-center justify-between gap-1.5 bg-slate-950 px-2 py-1.5 rounded-lg border border-slate-850 font-mono">
+                              <span className="text-slate-300 font-bold truncate select-all">{currentUser.referralCode || currentUser.username}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const inviteLink = `https://www.iaxaukin.com?ref=${encodeURIComponent(currentUser.referralCode || currentUser.username)}`;
+                                  navigator.clipboard.writeText(inviteLink);
+                                  alert("Enlace de afiliado copiado al portapapeles: " + inviteLink);
+                                }}
+                                className="text-brand-lime hover:text-white transition-colors cursor-pointer text-[8px] font-bold uppercase shrink-0"
+                              >
+                                Copiar Link
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Step up/upgrade memberships container */}
+                    <div className="space-y-4">
+                      <h5 className="text-xs font-bold uppercase tracking-wider text-slate-500 font-sans">
+                        Opciones de Membresía Disponibles
+                      </h5>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {(['RETAIL', 'PRO', 'INSTITUTIONAL'] as SubscriptionPlan[]).map((pKey) => {
+                          const plan = PLAN_DETAILS[pKey];
+                          const isCurrent = currentUser.plan === pKey;
+                          const isInst = pKey === 'INSTITUTIONAL';
+                          
+                          return (
+                            <div 
+                              key={pKey} 
+                              className={`rounded-3xl p-5 text-left flex flex-col justify-between transition-all duration-300 border
+                                ${isInst 
+                                  ? 'border-brand-lime/25 bg-slate-950 text-white shadow-xl shadow-brand-lime/5' 
+                                  : 'border-slate-100 bg-slate-50/50 text-slate-900 hover:bg-slate-50'
+                                } ${isCurrent ? 'ring-2 ring-brand-lime ring-offset-2' : ''}`}
+                            >
+                              <div className="space-y-3.5">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className={`px-2 py-0.5 text-[8px] font-extrabold uppercase rounded tracking-wider border
+                                    ${isInst 
+                                      ? 'bg-brand-lime/10 border-brand-lime/20 text-brand-lime' 
+                                      : 'bg-white border-slate-200 text-slate-700'}`}
+                                  >
+                                    PLAN {pKey}
+                                  </span>
+                                  {isCurrent && (
+                                    <span className="text-[7.5px] font-bold text-brand-lime bg-brand-lime/10 px-1.5 py-0.5 rounded border border-brand-lime/10 uppercase tracking-widest leading-none">
+                                      Actual
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="space-y-0.5">
+                                  <h6 className={`text-base font-serif italic font-bold ${isInst ? 'text-white' : 'text-slate-900'}`}>
+                                    {plan.name}
+                                  </h6>
+                                  <p className={`text-xs font-black font-mono tracking-tight text-fx-blue`}>
+                                    {plan.price}
+                                  </p>
+                                </div>
+
+                                <ul className="space-y-1.5 text-[9px] pt-2 border-t border-slate-200/40">
+                                  {plan.features.slice(0, 4).map((feat, idx) => (
+                                    <li key={idx} className="flex gap-1">
+                                      <Check className="w-2.5 h-2.5 mt-0.5 shrink-0 text-brand-lime" />
+                                      <span className={isInst ? 'text-slate-300 truncate' : 'text-slate-500 truncate'} title={feat}>
+                                        {feat}
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+
+                              <div className="pt-5 mt-auto">
+                                {isInst ? (
+                                  <a 
+                                    href={`mailto:gerencia@iaxaukin.com?subject=Consulta%20Plan%20Institucional&body=Hola%20Gerencia,%20mi%20usuario%20es%20@${currentUser.username}.%20Deseo%20más%20información.`}
+                                    className="w-full text-center py-2.5 font-bold uppercase tracking-wider text-[8px] rounded-xl cursor-pointer transition-all bg-brand-lime text-slate-950 hover:bg-white hover:text-black block"
+                                  >
+                                    Contactar Gerencia
+                                  </a>
+                                ) : (
+                                  <button 
+                                    type="button"
+                                    onClick={() => {
+                                      if (onSelectPlan) {
+                                        onClose(); // Close ProfileModal
+                                        onSelectPlan(pKey); // Open Checkout Modal in App.tsx
+                                      }
+                                    }}
+                                    className={`w-full text-center py-2.5 font-bold uppercase tracking-wider text-[8px] rounded-xl cursor-pointer transition-all block
+                                      ${isCurrent 
+                                        ? 'bg-slate-900 text-[#CCFF00] hover:bg-slate-800' 
+                                        : 'bg-slate-950 text-white hover:bg-slate-800'
+                                      }`}
+                                  >
+                                    {isCurrent ? "Renovar Suscripción" : "Suscripción / Sube Nivel"}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-amber-50 border border-amber-100 flex items-start gap-2.5 text-[10px] text-amber-800 leading-normal">
+                      <span className="text-sm shrink-0 font-sans">💡</span>
+                      <p className="font-sans">
+                        <b>Nota de Licenciamiento:</b> Al hacer clic en un plan se abrirá el portal de checkout del sistema para que puedas subir tu comprobante de pago USDT (Red Tron), Binance Pay o realizar tu suscripción automatizada con PayPal. Una vez notificado, la mesa de administración de IA XAU KIN activará o extenderá tu licencia en pocos minutos de forma manual.
+                      </p>
                     </div>
                   </div>
                 )}

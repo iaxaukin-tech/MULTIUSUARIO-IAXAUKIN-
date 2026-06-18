@@ -35,7 +35,8 @@ import {
   Send,
   Share2,
   Search,
-  Filter
+  Filter,
+  Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -450,6 +451,7 @@ export default function App() {
   const [isReceiptCameraOpen, setIsReceiptCameraOpen] = useState(false);
   const [isTelemetryCameraOpen, setIsTelemetryCameraOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [profileModalTab, setProfileModalTab] = useState<'profile' | 'password' | 'calendar' | 'membership'>('profile');
   const [showExpirationAlertPopup, setShowExpirationAlertPopup] = useState(false);
 
   // Auto-trigger membership expiration alert modal if 5 or fewer days are remaining
@@ -677,18 +679,24 @@ export default function App() {
 
   // Fetch admin states
   useEffect(() => {
-    if (currentUser?.role === 'ADMIN') {
+    if (currentUser?.role === 'ADMIN' || currentUser?.plan === 'INSTITUTIONAL') {
       const fetchAdminData = async () => {
         try {
           // Pre-ensure default coupon KINFREE30 is created in database
-          await userStore.ensureDefaultCoupon();
+          if (currentUser?.role === 'ADMIN') {
+            await userStore.ensureDefaultCoupon();
+          }
           
           const [fetchedUsers, fetchedCodes] = await Promise.all([
-            userStore.getUsers(),
-            userStore.getCodes()
+            currentUser?.role === 'ADMIN'
+              ? userStore.getUsers()
+              : userStore.getReferredUsers(currentUser.referralCode || currentUser.username || ''),
+            currentUser?.role === 'ADMIN' ? userStore.getCodes() : Promise.resolve([])
           ]);
           setAllUsers(fetchedUsers);
-          setAllCodes(fetchedCodes);
+          if (currentUser?.role === 'ADMIN') {
+            setAllCodes(fetchedCodes);
+          }
         } catch (err: any) {
           console.error("Error fetching datasets:", err);
         }
@@ -1177,7 +1185,10 @@ export default function App() {
                   {/* Logged profile banner - Clickable user session profile trigger */}
                   <button
                     type="button"
-                    onClick={() => setIsProfileModalOpen(true)}
+                    onClick={() => {
+                      setProfileModalTab('profile');
+                      setIsProfileModalOpen(true);
+                    }}
                     className="pl-2.5 border-l-2 border-fx-blue flex flex-col items-start text-left leading-none cursor-pointer hover:opacity-75 transition group"
                     title="Ver Perfil y Configuración"
                   >
@@ -1207,7 +1218,9 @@ export default function App() {
                   onUpdateConfig={(updatedUser) => setCurrentUser(updatedUser)} 
                   allUsers={allUsers}
                   onReloadUsers={async () => {
-                    const fetched = await userStore.getUsers();
+                    const fetched = currentUser?.role === 'ADMIN'
+                      ? await userStore.getUsers()
+                      : await userStore.getReferredUsers(currentUser.referralCode || currentUser.username || '');
                     setAllUsers(fetched);
                   }}
                 />
@@ -2766,6 +2779,24 @@ export default function App() {
                               </div>
                             )}
                           </div>
+
+                          {/* Membership upgrade nudge */}
+                          {currentUser.role !== 'ADMIN' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setProfileModalTab('membership');
+                                setIsProfileModalOpen(true);
+                              }}
+                              className="w-full py-2.5 px-4 bg-[#CCFF00]/10 hover:bg-[#CCFF00]/20 border border-[#CCFF00]/20 text-slate-800 text-[9px] font-extrabold uppercase tracking-wider rounded-xl transition-all duration-200 flex items-center justify-between group cursor-pointer"
+                            >
+                              <span className="flex items-center gap-1.5 font-sans">
+                                <Sparkles size={11} className="text-slate-600 animate-pulse shrink-0" />
+                                <span>Ver Planes & Cambiar de Membresía</span>
+                              </span>
+                              <span className="group-hover:translate-x-1 transition-transform duration-200">➔</span>
+                            </button>
+                          )}
                         </div>
                       )}
 
@@ -3155,6 +3186,8 @@ export default function App() {
               currentUser={currentUser}
               onUpdateUser={(updatedUser) => setCurrentUser(updatedUser)}
               handleLogout={handleLogout}
+              initialTab={profileModalTab}
+              onSelectPlan={(plan) => setCheckoutPlan(plan)}
             />
 
             {/* Expiration Warning Popup Dialog Modal */}
