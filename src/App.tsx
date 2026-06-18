@@ -2333,13 +2333,13 @@ export default function App() {
                                           <div className="flex flex-col items-center space-y-1.5 shrink-0 bg-slate-50 p-2 text-center rounded-lg border border-slate-100 shadow-inner">
                                             <div className="w-[100px] h-[100px] relative bg-white border border-slate-200/60 p-1 flex items-center justify-center rounded overflow-hidden">
                                               <img 
-                                                src={paymentConfig.usdtQrImage || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent('tron:' + paymentConfig.usdtAddress)}`} 
+                                                src={paymentConfig.usdtQrImage || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(paymentConfig.usdtAddress)}`} 
                                                 alt="USDT TRC20 QR Code" 
                                                 className="w-full h-full object-contain rounded" 
                                                 referrerPolicy="no-referrer"
                                               />
                                             </div>
-                                            <span className="text-[7.5px] uppercase tracking-widest text-[#22C55E] font-bold font-mono">Escanea USDT</span>
+                                            <span className="text-[7px] uppercase tracking-wider text-slate-500 font-extrabold font-mono">Escanea con Binance</span>
                                           </div>
 
                                           <div className="space-y-2.5 w-full">
@@ -2369,6 +2369,9 @@ export default function App() {
                                                 </button>
                                               </div>
                                             </div>
+                                            <p className="text-[8px] uppercase tracking-tight text-slate-500 leading-normal font-mono font-bold">
+                                              • Escanea el código QR directamente desde la aplicación de <b className="text-slate-800">Binance</b> para cargar automáticamente la dirección de red de forma segura.
+                                            </p>
                                             <p className="text-[8px] uppercase tracking-tight text-slate-400 leading-normal font-mono">
                                               • Envía exactamente el valor neto correspondiente para evitar demoras en el procesamiento de la licencia.
                                             </p>
