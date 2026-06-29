@@ -194,11 +194,13 @@ app.post("/api/analyze", async (req, res) => {
 
       while (attempts < maxAttempts) {
         attempts++;
+        // If the first attempt fails due to transient or capacity errors, we fall back to gemini-2.5-flash for maximum resilience
+        const currentModel = (attempts > 1) ? "gemini-2.5-flash" : model;
         try {
           const genAI = new GoogleGenAI({ apiKey: activeKey });
           
           const result = await genAI.models.generateContent({
-            model: model,
+            model: currentModel,
             contents: [
               {
                 parts: [
@@ -220,7 +222,7 @@ app.post("/api/analyze", async (req, res) => {
 
           if (result.text) {
             completedText = result.text;
-            console.log(`[IA XAU KIN Server] Sincronización exitosa utilizando la clave API ${i + 1}/${candidateKeys.length} (Intento ${attempts}/${maxAttempts})`);
+            console.log(`[IA XAU KIN Server] Sincronización exitosa utilizando la clave API ${i + 1}/${candidateKeys.length} con modelo ${currentModel} (Intento ${attempts}/${maxAttempts})`);
             keySuccess = true;
             break; // Break inner loop
           } else {
@@ -229,18 +231,20 @@ app.post("/api/analyze", async (req, res) => {
         } catch (err: any) {
           lastError = err;
           const errMsg = err.message || JSON.stringify(err);
-          console.error(`[IA XAU KIN Server] Fallo de clave API ${i + 1}/${candidateKeys.length} en intento ${attempts}/${maxAttempts}:`, errMsg);
+          console.error(`[IA XAU KIN Server] Fallo de clave API ${i + 1}/${candidateKeys.length} con modelo ${currentModel} en intento ${attempts}/${maxAttempts}:`, errMsg);
           
           const isTransient = errMsg.includes("503") || 
                               errMsg.includes("demand") || 
                               errMsg.includes("UNAVAILABLE") || 
                               errMsg.includes("500") ||
                               errMsg.includes("429") ||
-                              errMsg.includes("RESOURCE_EXHAUSTED");
+                              errMsg.includes("RESOURCE_EXHAUSTED") ||
+                              errMsg.includes("404") ||
+                              errMsg.includes("not found");
 
           if (isTransient && attempts < maxAttempts) {
             const delay = 800 * attempts;
-            console.log(`[IA XAU KIN Server] Inconveniente de alta demanda o cuota detectado (503/429/500). Esperando ${delay}ms de enfriamiento antes del intento ${attempts + 1}/${maxAttempts}...`);
+            console.log(`[IA XAU KIN Server] Inconveniente de alta demanda, cuota o compatibilidad detectado. Esperando ${delay}ms de enfriamiento y activando modelo de respaldo antes del intento ${attempts + 1}/${maxAttempts}...`);
             await sleep(delay);
           } else {
             // Unrecoverable on this key (e.g. invalid key) or reached max attempts

@@ -6,6 +6,7 @@ interface PayPalSubscriptionButtonProps {
   clientId: string;
   onSuccess: (subscriptionId: string) => void;
   onError: (error: string) => void;
+  onClearError?: () => void;
 }
 
 export const PayPalSubscriptionButton: React.FC<PayPalSubscriptionButtonProps> = ({
@@ -13,6 +14,7 @@ export const PayPalSubscriptionButton: React.FC<PayPalSubscriptionButtonProps> =
   clientId,
   onSuccess,
   onError,
+  onClearError,
 }) => {
   const [isScriptLoaded, setIsScriptLoaded] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
@@ -20,8 +22,15 @@ export const PayPalSubscriptionButton: React.FC<PayPalSubscriptionButtonProps> =
   const buttonRef = useRef<any>(null);
 
   useEffect(() => {
+    // Clear any previous error upon starting initialization
+    if (onClearError) {
+      onClearError();
+    }
+
+    const expectedSrc = `https://www.paypal.com/sdk/js?client-id=${clientId}&vault=true&intent=subscription&namespace=paypal_subscription&disable-funding=card,venmo,paylater`;
+    
     // Check if script is already present
-    const existingScript = document.getElementById('paypal-sdk-script');
+    const existingScript = document.getElementById('paypal-sdk-script') as HTMLScriptElement | null;
     
     const initializeButtons = () => {
       setIsScriptLoaded(true);
@@ -29,25 +38,38 @@ export const PayPalSubscriptionButton: React.FC<PayPalSubscriptionButtonProps> =
     };
 
     if (existingScript) {
-      if ((window as any).paypal_subscription && (window as any).paypal_subscription.Buttons) {
-        initializeButtons();
+      const currentSrc = existingScript.src;
+      // If the client ID or source has changed, or if the SDK namespace is missing (failed/stuck state),
+      // we remove the stale/failed script and load a new one to prevent getting stuck.
+      const isStale = currentSrc !== expectedSrc;
+      const isFailedOrNotLoaded = !(window as any).paypal_subscription || !(window as any).paypal_subscription.Buttons;
+      
+      if (isStale || isFailedOrNotLoaded) {
+        existingScript.remove();
+        if (isStale) {
+          delete (window as any).paypal_subscription;
+        }
       } else {
-        existingScript.addEventListener('load', initializeButtons);
+        initializeButtons();
+        return;
       }
-      return () => {
-        existingScript.removeEventListener('load', initializeButtons);
-      };
     }
 
     // Load PayPal SDK Script with isolated namespace
     const script = document.createElement('script');
     script.id = 'paypal-sdk-script';
-    script.src = `https://www.paypal.com/sdk/js?client-id=${clientId}&vault=true&intent=subscription&namespace=paypal_subscription&disable-funding=card,venmo,paylater`;
+    script.src = expectedSrc;
     script.setAttribute('data-sdk-integration-source', 'button-factory');
     script.async = true;
 
     script.onload = () => {
-      initializeButtons();
+      // Let's verify if the namespace actually got loaded
+      if ((window as any).paypal_subscription && (window as any).paypal_subscription.Buttons) {
+        initializeButtons();
+      } else {
+        setIsInitializing(false);
+        onError('El SDK de PayPal cargó pero no inicializó el namespace de suscripciones correctamente. Por favor verifica si tienes extensiones que bloqueen scripts o recarga la página.');
+      }
     };
 
     script.onerror = () => {
@@ -58,7 +80,7 @@ export const PayPalSubscriptionButton: React.FC<PayPalSubscriptionButtonProps> =
     document.body.appendChild(script);
 
     return () => {
-      script.removeEventListener('load', initializeButtons);
+      // Cleanup
     };
   }, [clientId, onError]);
 

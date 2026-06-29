@@ -659,6 +659,7 @@ export default function App() {
   const [testKeyResult, setTestKeyResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const cleanKey = (rawKey: string): string => {
+    if (!rawKey) return "";
     let cleaned = rawKey.trim();
     if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
       cleaned = cleaned.slice(1, -1);
@@ -676,6 +677,26 @@ export default function App() {
         cleaned = cleaned.slice(1, -1);
       }
     }
+
+    // Smart auto-extraction if the user copy-pastes conversational or trailing text
+    const words = cleaned.split(/\s+/);
+    if (words.length > 1) {
+      // Look for a word starting with the standard prefixes: AIza (traditional) or AQ (new Google AI Studio format)
+      const likelyKey = words.find(w => w.startsWith("AIza") || w.startsWith("AQ."));
+      if (likelyKey) {
+        cleaned = likelyKey;
+      } else {
+        // Fallback: look for any alphanumeric word that looks like a token/key (length between 35 and 65)
+        const possibleToken = words.find(w => /^[A-Za-z0-9_\-\.]+$/.test(w) && w.length >= 35 && w.length <= 65);
+        if (possibleToken) {
+          cleaned = possibleToken;
+        }
+      }
+    }
+
+    // Remove any trailing/leading punctuation that might have been accidentally pasted
+    cleaned = cleaned.replace(/^[:,\s]+|[:,\s]+$/g, "");
+
     return cleaned.trim();
   };
 
@@ -1163,6 +1184,8 @@ export default function App() {
       
       if (errorMessage.includes("API_KEY_MISSING")) {
         setError("API_KEY_MISSING: La clave de API de Gemini no está configurada en los Secretos de AI Studio.");
+      } else if (errorMessage.toLowerCase().includes("api key not valid") || errorMessage.toLowerCase().includes("key not valid") || errorMessage.toLowerCase().includes("invalid_argument") || errorMessage.toLowerCase().includes("not valid")) {
+        setError("CLAVE API NO VÁLIDA: La clave de API de Gemini ingresada es incorrecta, ha expirado o no está activa en Google AI Studio. Por favor, haz clic en el botón 'Clave API' arriba a la derecha para configurar o probar tu clave de API personal con la opción 'Probar'. Si no tienes una, consíguela gratis en Google AI Studio.");
       } else if (errorMessage.includes("SERVER_STATIC_MODE_NO_KEY")) {
         setError(errorMessage.replace("SERVER_STATIC_MODE_NO_KEY: ", ""));
       } else if (errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("429")) {
@@ -2416,6 +2439,7 @@ export default function App() {
                                               ? (paymentConfig.paypalPlanIdBasic || "P-6U703114N8775584UNIU4K7Y") 
                                               : (paymentConfig.paypalPlanIdPro || "P-022706311G490222MNIU4USY")
                                             }
+                                            onClearError={() => setPaymentError(null)}
                                             onSuccess={async (subscriptionId) => {
                                               setIsSubmittingPayment(true);
                                               setPaymentError(null);
@@ -2972,10 +2996,86 @@ export default function App() {
                         <motion.div 
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
-                          className="p-5 bg-red-50 border border-red-100 rounded-2xl flex items-start gap-4 text-red-600 text-xs font-medium"
+                          className="p-5 bg-red-50 border border-red-100 rounded-2xl flex flex-col gap-3 text-red-600 text-xs font-medium"
                         >
-                          <AlertTriangle size={18} className="shrink-0" />
-                          <p>{error}</p>
+                          <div className="flex items-start gap-4">
+                            <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+                            <div className="space-y-1">
+                              <p className="font-extrabold text-[12px] uppercase tracking-wider text-rose-800">
+                                {error.includes("CLAVE API") || error.includes("API_KEY_MISSING") || error.toLowerCase().includes("api key not valid") || error.toLowerCase().includes("key not valid") || error.toLowerCase().includes("invalid_argument") || error.toLowerCase().includes("not valid")
+                                  ? "🚨 Error de Clave API de Gemini"
+                                  : "Atención"}
+                              </p>
+                              <p className="leading-relaxed text-rose-700">{error}</p>
+                            </div>
+                          </div>
+
+                          {(error.includes("CLAVE API") || error.includes("API_KEY_MISSING") || error.toLowerCase().includes("api key not valid") || error.toLowerCase().includes("key not valid") || error.toLowerCase().includes("invalid_argument") || error.toLowerCase().includes("not valid")) && (
+                            <div className="mt-3 p-4 bg-white border border-rose-200/50 rounded-xl space-y-3 shadow-sm text-slate-700">
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                Configura / Corrige tu Clave API aquí mismo:
+                              </p>
+                              <div className="flex gap-2">
+                                <input
+                                  type="password"
+                                  value={customApiKey}
+                                  onChange={(e) => {
+                                    setCustomApiKey(e.target.value);
+                                    if (testKeyResult) setTestKeyResult(null);
+                                  }}
+                                  placeholder="AIzaSy..."
+                                  className="flex-1 h-10 bg-slate-50 border border-slate-200 rounded-lg px-3 text-xs font-mono text-slate-800 focus:outline-none focus:border-slate-400 transition-colors"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => testManualApiKey(customApiKey)}
+                                  disabled={isTestingKey}
+                                  className="h-10 px-3.5 bg-slate-900 text-[#CCFF00] hover:bg-slate-800 disabled:opacity-50 font-black text-[9px] uppercase tracking-wider rounded-lg transition-all flex items-center justify-center min-w-[70px] cursor-pointer shadow-sm"
+                                >
+                                  {isTestingKey ? (
+                                    <div className="w-3.5 h-3.5 border-2 border-[#CCFF00] border-t-transparent rounded-full animate-spin" />
+                                  ) : (
+                                    "Probar"
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const cleaned = cleanKey(customApiKey);
+                                    if (cleaned === "") {
+                                      localStorage.removeItem("manual_gemini_api_key");
+                                      setCustomApiKey("");
+                                    } else {
+                                      localStorage.setItem("manual_gemini_api_key", cleaned);
+                                      setCustomApiKey(cleaned);
+                                    }
+                                    setTestKeyResult(null);
+                                    setError(null);
+                                  }}
+                                  className="h-10 px-3.5 bg-emerald-600 text-white hover:bg-emerald-700 font-bold text-[9px] uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-sm"
+                                >
+                                  Guardar
+                                </button>
+                              </div>
+
+                              {testKeyResult && (
+                                <div 
+                                  className={`p-2.5 rounded-lg text-[9.5px] leading-normal font-bold flex items-start gap-2 ${
+                                    testKeyResult.success 
+                                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-100/80 shadow-sm' 
+                                      : 'bg-rose-50 text-rose-800 border border-rose-100/80 shadow-sm'
+                                  }`}
+                                >
+                                  <span className="text-[11px] select-none">{testKeyResult.success ? '✅' : '❌'}</span>
+                                  <div className="break-all">{testKeyResult.message}</div>
+                                </div>
+                              )}
+                              
+                              <p className="text-[9.5px] text-slate-400 leading-normal">
+                                Tu clave de Google AI Studio es gratuita y se almacena únicamente de forma local en tu navegador. Puedes crear una clave en <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-emerald-600 font-bold hover:underline">Google AI Studio</a>.
+                              </p>
+                            </div>
+                          )}
                         </motion.div>
                       )}
                     </div>

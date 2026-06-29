@@ -23,8 +23,10 @@ export const PayPalTrialButton: React.FC<PayPalTrialButtonProps> = ({
       onClearError();
     }
 
+    const expectedSrc = "https://www.paypal.com/sdk/js?client-id=BAArwClXhD1W1f54pSBziGecpGWCL5V3cpo5dUyZoKHiV4ntwMbFBQ7HIvMzDL3sx9F-GJ-khZW5J4sqsA&components=hosted-buttons&disable-funding=card,venmo,paylater&currency=USD&namespace=paypal_trial";
+    
     // Check if script is already present
-    const existingScript = document.getElementById('paypal-hosted-trial-script');
+    const existingScript = document.getElementById('paypal-hosted-trial-script') as HTMLScriptElement | null;
     
     const initializeButtons = () => {
       setIsScriptLoaded(true);
@@ -32,24 +34,34 @@ export const PayPalTrialButton: React.FC<PayPalTrialButtonProps> = ({
     };
 
     if (existingScript) {
-      if ((window as any).paypal_trial && (window as any).paypal_trial.HostedButtons) {
-        initializeButtons();
+      const currentSrc = existingScript.src;
+      const isStale = currentSrc !== expectedSrc;
+      const isFailedOrNotLoaded = !(window as any).paypal_trial || !(window as any).paypal_trial.HostedButtons;
+      
+      if (isStale || isFailedOrNotLoaded) {
+        existingScript.remove();
+        if (isStale) {
+          delete (window as any).paypal_trial;
+        }
       } else {
-        existingScript.addEventListener('load', initializeButtons);
+        initializeButtons();
+        return;
       }
-      return () => {
-        existingScript.removeEventListener('load', initializeButtons);
-      };
     }
 
     // Load PayPal SDK Script for Hosted Buttons with isolated namespace
     const script = document.createElement('script');
     script.id = 'paypal-hosted-trial-script';
-    script.src = "https://www.paypal.com/sdk/js?client-id=BAArwClXhD1W1f54pSBziGecpGWCL5V3cpo5dUyZoKHiV4ntwMbFBQ7HIvMzDL3sx9F-GJ-khZW5J4sqsA&components=hosted-buttons&disable-funding=card,venmo,paylater&currency=USD&namespace=paypal_trial";
+    script.src = expectedSrc;
     script.async = true;
 
     script.onload = () => {
-      initializeButtons();
+      if ((window as any).paypal_trial && (window as any).paypal_trial.HostedButtons) {
+        initializeButtons();
+      } else {
+        setIsInitializing(false);
+        onError('El portal promocional de PayPal se cargó pero no inicializó correctamente. Por favor recarga la página o desactiva bloqueadores de scripts.');
+      }
     };
 
     script.onerror = () => {
@@ -60,7 +72,7 @@ export const PayPalTrialButton: React.FC<PayPalTrialButtonProps> = ({
     document.body.appendChild(script);
 
     return () => {
-      script.removeEventListener('load', initializeButtons);
+      // Cleanup
     };
   }, [onError, onClearError]);
 
