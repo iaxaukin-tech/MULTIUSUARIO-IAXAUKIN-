@@ -631,7 +631,7 @@ export const Login = ({ onLogin, navigateTo }: LoginProps) => {
                               type="text"
                               value={manualReferralCode}
                               onChange={(e) => setManualReferralCode(e.target.value)}
-                              placeholder="Fórmula de Referido (p. ej. ib_trader10)"
+                              placeholder="Código de Invitación (p. ej. vip_trader10)"
                               className="w-full text-[11px] font-mono pl-3.5 pr-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-brand-lime transition-all text-slate-800 lowercase placeholder:text-slate-400"
                             />
                           </div>

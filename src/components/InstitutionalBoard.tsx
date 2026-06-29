@@ -194,10 +194,10 @@ export const InstitutionalBoard = ({
               Panel Administrativo de Socios
             </span>
             <h1 className="text-3xl font-serif italic font-bold text-slate-900 mt-2">
-              Mesa de <span className="text-brand-lime">Socios y Comunidades (IBs)</span>
+              Mesa de <span className="text-brand-lime">Socios y Comunidades</span>
             </h1>
             <p className="text-xs text-slate-500 mt-1 font-medium">
-              Administración global de comunidades e IBs integrados. Genera enlaces de referidos y visualiza traders afiliados por cada socio.
+              Administración global de comunidades y socios integrados. Genera enlaces de referidos y visualiza traders afiliados por cada socio.
             </p>
           </div>
           <div className="flex items-center gap-2 font-mono text-[9px] uppercase bg-slate-900 text-slate-200 px-3 py-1.5 rounded-xl font-bold tracking-wider self-start md:self-auto">
@@ -210,7 +210,7 @@ export const InstitutionalBoard = ({
           <div className="flex items-center justify-between border-b border-slate-100 pb-4">
             <h3 className="text-lg font-serif italic font-bold text-slate-900 flex items-center gap-2">
               <Users size={16} className="text-brand-lime" />
-              Directorio de Socios Comunitarios / IBs
+              Directorio de Socios Comunitarios / Aliados
             </h3>
             <span className="text-[9.5px] font-mono font-bold uppercase tracking-wider text-slate-400">
               Mesa Operativa
@@ -362,7 +362,7 @@ export const InstitutionalBoard = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-200">
         <div>
           <span className="text-[9px] uppercase tracking-[0.2em] font-mono font-black text-slate-400 bg-slate-100 px-2 py-1 rounded">
-            {isAdmin && selectedPartner ? `Mesa de Socio: @${selectedPartner.username}` : "Panel para Comunidades e IB's"}
+            {isAdmin && selectedPartner ? `Mesa de Socio: @${selectedPartner.username}` : "Panel para Comunidades y Socios Integrados"}
           </span>
           <h1 className="text-3xl font-serif italic font-bold text-slate-900 mt-2">
             Mesa de Socios e <span className="text-brand-lime">Integraciones</span>

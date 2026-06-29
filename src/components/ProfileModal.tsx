@@ -30,7 +30,7 @@ interface ProfileModalProps {
   currentUser: User;
   onUpdateUser: (updatedUser: User) => void;
   handleLogout: () => void;
-  onSelectPlan?: (plan: SubscriptionPlan) => void;
+  onSelectPlan?: (plan: SubscriptionPlan, isTrial?: boolean) => void;
   initialTab?: 'profile' | 'password' | 'calendar' | 'membership';
 }
 
@@ -46,6 +46,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   initialTab = 'profile'
 }) => {
   const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab);
+  const [isBasicTrial, setIsBasicTrial] = useState(false);
   
   // Username editing state
   const [isEditingUsername, setIsEditingUsername] = useState(false);
@@ -616,9 +617,60 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                                     {plan.name}
                                   </h6>
                                   <p className={`text-xs font-black font-mono tracking-tight text-fx-blue`}>
-                                    {plan.price}
+                                    {pKey === 'RETAIL' && isBasicTrial ? '$1.00 USD / Semana' : plan.price}
                                   </p>
                                 </div>
+
+                                {pKey === 'RETAIL' && (
+                                  <div className="space-y-2 pt-2 border-t border-slate-200/40">
+                                    <label className="block text-[7.5px] uppercase tracking-wider text-slate-400 font-extrabold font-mono ml-0.5">
+                                      Selecciona duración:
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-1 text-center bg-white p-0.5 rounded-lg border border-slate-100 shadow-inner">
+                                      <button
+                                        type="button"
+                                        onClick={() => setIsBasicTrial(false)}
+                                        className={`py-1.5 px-0.5 rounded-md text-center transition-all cursor-pointer ${
+                                          !isBasicTrial 
+                                            ? 'bg-slate-900 border border-slate-800 text-white font-black text-[8px] shadow-sm' 
+                                            : 'text-slate-500 hover:text-slate-700 text-[7.5px] font-bold'
+                                        }`}
+                                      >
+                                        Mensual: $29
+                                      </button>
+                                      
+                                      <button
+                                        type="button"
+                                        onClick={() => setIsBasicTrial(true)}
+                                        className={`py-1.5 px-0.5 rounded-md text-center transition-all cursor-pointer relative overflow-hidden ${
+                                          isBasicTrial 
+                                            ? 'bg-[#CCFF00] border border-[#a6cf00] text-slate-900 font-black text-[8px] shadow-sm' 
+                                            : 'text-slate-500 hover:text-slate-700 text-[7.5px] font-bold'
+                                        }`}
+                                      >
+                                        Prueba: $1
+                                      </button>
+                                    </div>
+
+                                    {isBasicTrial && (
+                                      <motion.div 
+                                        initial={{ scale: 0.95, opacity: 0 }}
+                                        animate={{ scale: 1, opacity: 1 }}
+                                        className="p-2 bg-gradient-to-br from-purple-650 to-indigo-850 text-white rounded-xl space-y-1 relative overflow-hidden text-left shadow-sm border border-purple-500/20"
+                                      >
+                                        <div className="flex justify-between items-center text-[6.5px] font-mono font-bold uppercase tracking-wider">
+                                          <span>🎁 PROMO EXCLUSIVA</span>
+                                          <span className="bg-[#CCFF00] text-slate-900 px-1 rounded-full font-extrabold">
+                                            $1 USD
+                                          </span>
+                                        </div>
+                                        <p className="text-[7.5px] text-purple-100 leading-tight font-medium">
+                                          Prueba la Membresía <b>Socio Básico por 1 semana completa</b>.
+                                        </p>
+                                      </motion.div>
+                                    )}
+                                  </div>
+                                )}
 
                                 <ul className="space-y-1.5 text-[9px] pt-2 border-t border-slate-200/40">
                                   {plan.features.slice(0, 4).map((feat, idx) => (
@@ -646,7 +698,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                                     onClick={() => {
                                       if (onSelectPlan) {
                                         onClose(); // Close ProfileModal
-                                        onSelectPlan(pKey); // Open Checkout Modal in App.tsx
+                                        onSelectPlan(pKey, pKey === 'RETAIL' ? isBasicTrial : false); // Open Checkout Modal in App.tsx
                                       }
                                     }}
                                     className={`w-full text-center py-2.5 font-bold uppercase tracking-wider text-[8px] rounded-xl cursor-pointer transition-all block

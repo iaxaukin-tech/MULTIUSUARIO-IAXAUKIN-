@@ -29,18 +29,20 @@ export const PayPalSubscriptionButton: React.FC<PayPalSubscriptionButtonProps> =
     };
 
     if (existingScript) {
-      if ((window as any).paypal) {
+      if ((window as any).paypal_subscription && (window as any).paypal_subscription.Buttons) {
         initializeButtons();
       } else {
         existingScript.addEventListener('load', initializeButtons);
       }
-      return;
+      return () => {
+        existingScript.removeEventListener('load', initializeButtons);
+      };
     }
 
-    // Load PayPal SDK Script
+    // Load PayPal SDK Script with isolated namespace
     const script = document.createElement('script');
     script.id = 'paypal-sdk-script';
-    script.src = `https://www.paypal.com/sdk/js?client-id=${clientId}&vault=true&intent=subscription`;
+    script.src = `https://www.paypal.com/sdk/js?client-id=${clientId}&vault=true&intent=subscription&namespace=paypal_subscription&disable-funding=card,venmo,paylater`;
     script.setAttribute('data-sdk-integration-source', 'button-factory');
     script.async = true;
 
@@ -61,49 +63,88 @@ export const PayPalSubscriptionButton: React.FC<PayPalSubscriptionButtonProps> =
   }, [clientId, onError]);
 
   useEffect(() => {
-    if (!isScriptLoaded || !(window as any).paypal) return;
+    if (!isScriptLoaded || !(window as any).paypal_subscription) return;
 
-    // Remove any previous buttons from the container before rendering new ones
-    const container = document.getElementById(containerId);
-    if (container) {
-      container.innerHTML = '';
-    }
+    let isMounted = true;
+    let checkInterval: NodeJS.Timeout;
+    let timeoutTimer: NodeJS.Timeout;
 
-    try {
-      buttonRef.current = (window as any).paypal.Buttons({
-        style: {
-          shape: 'rect',
-          color: 'white',
-          layout: 'vertical',
-          label: 'subscribe',
-        },
-        createSubscription: (data: any, actions: any) => {
-          return actions.subscription.create({
-            plan_id: planId,
+    const tryRender = () => {
+      if (!isMounted) return false;
+      const paypalSub = (window as any).paypal_subscription;
+      if (paypalSub && typeof paypalSub.Buttons === 'function') {
+        clearInterval(checkInterval);
+        clearTimeout(timeoutTimer);
+
+        // Remove any previous buttons from the container before rendering new ones
+        const container = document.getElementById(containerId);
+        if (container) {
+          container.innerHTML = '';
+        }
+
+        try {
+          buttonRef.current = paypalSub.Buttons({
+            style: {
+              shape: 'rect',
+              color: 'white',
+              layout: 'vertical',
+              label: 'subscribe',
+            },
+            createSubscription: (data: any, actions: any) => {
+              return actions.subscription.create({
+                plan_id: planId,
+              });
+            },
+            onApprove: (data: any, actions: any) => {
+              if (data.subscriptionID) {
+                onSuccess(data.subscriptionID);
+              } else {
+                onError('Se aprobó el pago, pero no se recibió el ID de la suscripción de PayPal.');
+              }
+            },
+            onError: (err: any) => {
+              console.error('PayPal button error:', err);
+              onError('Ocurrió un problema con el portal de PayPal. Por favor intenta otro método o inténtalo más tarde.');
+            },
           });
-        },
-        onApprove: (data: any, actions: any) => {
-          if (data.subscriptionID) {
-            onSuccess(data.subscriptionID);
-          } else {
-            onError('Se aprobó el pago, pero no se recibió el ID de la suscripción de PayPal.');
-          }
-        },
-        onError: (err: any) => {
-          console.error('PayPal button error:', err);
-          onError('Ocurrió un problema con el portal de PayPal. Por favor intenta otro método o inténtalo más tarde.');
-        },
-      });
 
-      if (buttonRef.current && document.getElementById(containerId)) {
-        buttonRef.current.render(`#${containerId}`);
+          if (buttonRef.current && document.getElementById(containerId)) {
+            buttonRef.current.render(`#${containerId}`);
+          }
+          return true;
+        } catch (err: any) {
+          console.error('Error rendering PayPal buttons:', err);
+          onError('Error al inicializar la pasarela de PayPal: ' + err.message);
+          return true;
+        }
       }
-    } catch (err: any) {
-      console.error('Error rendering PayPal buttons:', err);
-      onError('Error al inicializar la pasarela de PayPal: ' + err.message);
+      return false;
+    };
+
+    // Try rendering immediately
+    const rendered = tryRender();
+    if (!rendered) {
+      // Poll every 150ms for Buttons constructor
+      checkInterval = setInterval(() => {
+        if (tryRender()) {
+          clearInterval(checkInterval);
+        }
+      }, 150);
+
+      // Only show error after a full 10-second timeout
+      timeoutTimer = setTimeout(() => {
+        clearInterval(checkInterval);
+        const paypalSub = (window as any).paypal_subscription;
+        if (isMounted && !(paypalSub && typeof paypalSub.Buttons === 'function')) {
+          onError('No se pudieron inicializar los botones de PayPal. Por favor verifica si tienes extensiones que bloqueen scripts o recarga la página.');
+        }
+      }, 10000);
     }
 
     return () => {
+      isMounted = false;
+      clearInterval(checkInterval);
+      clearTimeout(timeoutTimer);
       if (buttonRef.current && typeof buttonRef.current.close === 'function') {
         try {
           buttonRef.current.close();

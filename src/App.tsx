@@ -44,6 +44,7 @@ import { Login } from './components/Login';
 import { PrivacyPage } from './components/PrivacyPage';
 import { TermsPage } from './components/TermsPage';
 import { PayPalSubscriptionButton } from './components/PayPalSubscriptionButton';
+import { PayPalTrialButton } from './components/PayPalTrialButton';
 import { CameraModal } from './components/CameraModal';
 import { ProfileModal } from './components/ProfileModal';
 import { InstitutionalBoard } from './components/InstitutionalBoard';
@@ -434,6 +435,7 @@ export default function App() {
 
   // Checkout Modal State hooks
   const [checkoutPlan, setCheckoutPlan] = useState<SubscriptionPlan | null>(null);
+  const [isTrialPromoSelected, setIsTrialPromoSelected] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'USDT' | 'BTC' | 'SOL' | 'BINANCE' | 'FIAT_COP_PSE' | 'PAYPAL'>('USDT');
   const [paymentTxHash, setPaymentTxHash] = useState('');
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
@@ -653,6 +655,74 @@ export default function App() {
   // Client-side API Key states for manual override in production/shared mode
   const [customApiKey, setCustomApiKey] = useState<string>(() => localStorage.getItem("manual_gemini_api_key") || "");
   const [showKeyConfig, setShowKeyConfig] = useState(false);
+  const [isTestingKey, setIsTestingKey] = useState(false);
+  const [testKeyResult, setTestKeyResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const cleanKey = (rawKey: string): string => {
+    let cleaned = rawKey.trim();
+    if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+      cleaned = cleaned.slice(1, -1);
+    }
+    if (cleaned.startsWith("'") && cleaned.endsWith("'")) {
+      cleaned = cleaned.slice(1, -1);
+    }
+    const eqIndex = cleaned.indexOf('=');
+    if (eqIndex !== -1 && (cleaned.toUpperCase().startsWith("GEMINI_API_KEY") || cleaned.toUpperCase().includes("API"))) {
+      cleaned = cleaned.substring(eqIndex + 1).trim();
+      if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+        cleaned = cleaned.slice(1, -1);
+      }
+      if (cleaned.startsWith("'") && cleaned.endsWith("'")) {
+        cleaned = cleaned.slice(1, -1);
+      }
+    }
+    return cleaned.trim();
+  };
+
+  const testManualApiKey = async (keyToTest: string) => {
+    const cleaned = cleanKey(keyToTest);
+    if (!cleaned) {
+      setTestKeyResult({ success: false, message: "Por favor, ingresa una clave de API primero." });
+      return;
+    }
+    
+    setIsTestingKey(true);
+    setTestKeyResult(null);
+    
+    try {
+      // Use standard endpoint to test if key works
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${cleaned}`;
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: "Hola, responde brevemente con la palabra OK si funciona." }] }]
+        })
+      });
+      
+      if (response.ok) {
+        setTestKeyResult({ success: true, message: "¡Clave de API válida y activa en Google AI Studio!" });
+      } else {
+        let errorBody = "Error desconocido";
+        try {
+          const text = await response.text();
+          const parsed = JSON.parse(text);
+          if (parsed.error && parsed.error.message) {
+            errorBody = parsed.error.message;
+          } else {
+            errorBody = text;
+          }
+        } catch {
+          errorBody = `HTTP ${response.status}`;
+        }
+        setTestKeyResult({ success: false, message: `Clave no válida: ${errorBody}` });
+      }
+    } catch (err: any) {
+      setTestKeyResult({ success: false, message: `Fallo de conexión: ${err.message || err}` });
+    } finally {
+      setIsTestingKey(false);
+    }
+  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -707,7 +777,10 @@ export default function App() {
 
   const handleAdminApprove = async (userId: string, plan: SubscriptionPlan) => {
     try {
-      const updatedUser = await userStore.updateUserStatus(userId, plan, 'ACTIVE', 30);
+      const targetUser = allUsers.find(u => u.id === userId);
+      const isTrial = targetUser?.paymentReceiptUrl?.startsWith('PAYPAL_TRIAL_ID:') || targetUser?.paymentReceiptUrl?.toLowerCase().includes('trial');
+      const durationDays = isTrial ? 7 : 30;
+      const updatedUser = await userStore.updateUserStatus(userId, plan, 'ACTIVE', durationDays);
       const fetchedUsers = await userStore.getUsers();
       setAllUsers(fetchedUsers);
       if (currentUser?.id === userId) {
@@ -940,7 +1013,7 @@ export default function App() {
       let text = "";
 
       // Only allow ADMIN to override with manual API key stored in browser (prevents test/trial users from leaking/inheriting cached storage keys on the same domain)
-      const activeGeminiKey = currentUser.role === 'ADMIN' ? customApiKey.trim() : '';
+      const activeGeminiKey = currentUser.role === 'ADMIN' ? cleanKey(customApiKey) : '';
 
       try {
         console.log("[IA XAU KIN] Intentando análisis por servidor backend...");
@@ -1161,7 +1234,7 @@ export default function App() {
                       className={`flex items-center gap-1.5 transition-colors cursor-pointer group ${viewMode === 'INSTITUTIONAL_BOARD' ? 'text-black font-black' : 'hover:text-slate-900'}`}
                     >
                       <Globe size={13} className={viewMode === 'INSTITUTIONAL_BOARD' ? 'text-brand-lime' : 'group-hover:text-brand-lime'} />
-                      <span className="hidden xs:inline sm:inline">Comunidad / IB</span>
+                      <span className="hidden xs:inline sm:inline">Comunidad / Socios</span>
                     </button>
                   )}
 
@@ -1313,18 +1386,23 @@ export default function App() {
                             }).map(u => {
                               const diffTime = new Date(u.expiresAt!).getTime() - Date.now();
                               const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                              const isPaypal = u.paymentReceiptUrl?.startsWith('PAYPAL_SUSB_ID:');
+                              const isPaypalSub = u.paymentReceiptUrl?.startsWith('PAYPAL_SUSB_ID:');
+                              const isPaypalTrial = u.paymentReceiptUrl?.startsWith('PAYPAL_TRIAL_ID:');
                               return (
                                 <div key={u.id} className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-slate-100 text-[9.5px] shadow-sm">
                                   <div>
                                     <div className="font-mono font-bold text-slate-800">@{u.username}</div>
                                     <div className="text-[8px] text-slate-400 block mt-0.5">{u.email}</div>
-                                    {isPaypal ? (
-                                      <span className="text-[7px] text-blue-600 font-black bg-blue-50 border border-blue-100 rounded px-1 mt-1 inline-block uppercase font-mono tracking-wider">
+                                    {isPaypalTrial ? (
+                                      <span className="text-[7.5px] text-purple-600 font-extrabold bg-purple-50 border border-purple-100 rounded px-1.5 py-0.5 mt-1 inline-block uppercase font-mono tracking-wider animate-pulse">
+                                        ⚡ Prueba $1 USD (1 Sem)
+                                      </span>
+                                    ) : isPaypalSub ? (
+                                      <span className="text-[7.5px] text-blue-600 font-black bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5 mt-1 inline-block uppercase font-mono tracking-wider">
                                         💳 PayPal (Autorrenovación)
                                       </span>
                                     ) : (
-                                      <span className="text-[7px] text-amber-600 font-black bg-amber-50 border border-amber-100 rounded px-1 mt-1 inline-block uppercase font-mono tracking-wider">
+                                      <span className="text-[7.5px] text-amber-600 font-black bg-amber-50 border border-amber-100 rounded px-1.5 py-0.5 mt-1 inline-block uppercase font-mono tracking-wider">
                                         ⚠️ Manual (USDT/Binance)
                                       </span>
                                     )}
@@ -1465,7 +1543,9 @@ export default function App() {
                               }
 
                               return filteredUsers.map((user) => {
-                                const isPaypal = user.paymentReceiptUrl?.startsWith('PAYPAL_SUSB_ID:');
+                                const isPaypalSub = user.paymentReceiptUrl?.startsWith('PAYPAL_SUSB_ID:');
+                                const isPaypalTrial = user.paymentReceiptUrl?.startsWith('PAYPAL_TRIAL_ID:');
+                                const isPaypal = isPaypalSub || isPaypalTrial;
                                 const diffDays = user.expiresAt 
                                   ? Math.ceil((new Date(user.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
                                   : null;
@@ -1480,7 +1560,12 @@ export default function App() {
                                         {user.role === 'ADMIN' && (
                                           <span className="bg-slate-950 text-white rounded px-1 py-0.5 text-[7px] font-bold tracking-widest scale-95 origin-left">ADMIN</span>
                                         )}
-                                        {isPaypal && (
+                                        {isPaypalTrial && (
+                                          <span className="bg-purple-500/10 text-purple-650 rounded px-1.5 py-0.5 text-[7px] font-black tracking-wider uppercase font-mono border border-purple-500/15 animate-pulse">
+                                            ⚡ PRUEBA $1 USD (1 Sem)
+                                          </span>
+                                        )}
+                                        {isPaypalSub && (
                                           <span className="bg-blue-500/10 text-blue-600 rounded px-1.5 py-0.5 text-[7px] font-black tracking-wider uppercase font-mono border border-blue-500/10">
                                             💳 PAYPAL
                                           </span>
@@ -1544,7 +1629,11 @@ export default function App() {
                                       </div>
                                     </td>
                                     <td className="py-4 font-mono text-[9.5px]">
-                                      {isPaypal ? (
+                                      {isPaypalTrial ? (
+                                        <span className="text-purple-600 bg-purple-50/50 px-2.5 py-1.5 rounded-[6px] font-black block max-w-[124px] border border-purple-500/10 text-center text-[8px] uppercase tracking-wide animate-pulse">
+                                          Prueba $1 (1 Sem)
+                                        </span>
+                                      ) : isPaypalSub ? (
                                         <span className="text-blue-600 bg-blue-50/50 px-2.5 py-1.5 rounded-[6px] font-black block max-w-[124px] border border-blue-500/10 text-center text-[8px] uppercase tracking-wide">
                                           Suscripción Autopago
                                         </span>
@@ -2148,6 +2237,7 @@ export default function App() {
                           <button
                             onClick={() => {
                               setCheckoutPlan(null);
+                              setIsTrialPromoSelected(false);
                               setPaymentTxHash('');
                               setPaymentError(null);
                             }}
@@ -2215,7 +2305,7 @@ export default function App() {
                             </div>
                           ) : (
                             // Retail & Pro Checkout View
-                            <div className="space-y-4">
+                            <div className="space-y-4 font-sans">
                               {/* Horizontal Payment Method Tabs */}
                               <div className="grid grid-cols-3 gap-1 sm:gap-1.5 border-b border-slate-100 pb-2">
                                 {[
@@ -2226,21 +2316,25 @@ export default function App() {
                                   // Map 'BINANCE2' tab to 'BINANCE' state
                                   const isActive = (tab.id === 'BINANCE2' && paymentMethod === 'BINANCE') || paymentMethod === tab.id;
                                   const IconComponent = tab.icon;
+                                  const isDisabled = isTrialPromoSelected && tab.id !== 'PAYPAL';
                                   return (
                                     <button
                                       key={tab.id}
                                       type="button"
+                                      disabled={isDisabled}
                                       onClick={() => {
                                         setPaymentMethod(tab.id === 'BINANCE2' ? 'BINANCE' : tab.id as any);
                                         setPaymentError(null);
                                       }}
                                       className={`flex items-center justify-center gap-1 px-1.5 py-2 text-[8px] sm:text-[10px] uppercase tracking-wider font-extrabold rounded-lg cursor-pointer transition text-center ${
-                                        isActive 
-                                          ? 'bg-slate-900 border border-slate-800 text-brand-lime' 
-                                          : 'bg-slate-50 border border-slate-100 text-slate-500 hover:bg-slate-100'
+                                        isDisabled
+                                          ? 'opacity-30 bg-slate-100 border border-slate-100 text-slate-350 cursor-not-allowed'
+                                          : isActive 
+                                            ? 'bg-slate-900 border border-slate-800 text-brand-lime font-extrabold' 
+                                            : 'bg-slate-50 border border-slate-100 text-slate-500 hover:bg-slate-100 font-bold'
                                       }`}
                                     >
-                                      <IconComponent size={11} className={isActive ? 'text-brand-lime shrink-0' : 'text-slate-400 shrink-0'} />
+                                      <IconComponent size={11} className={isDisabled ? 'text-slate-300' : isActive ? 'text-brand-lime shrink-0' : 'text-slate-400 shrink-0'} />
                                       <span className="truncate">{tab.label}</span>
                                     </button>
                                   );
@@ -2263,48 +2357,93 @@ export default function App() {
 
                                   {(checkoutPlan === 'RETAIL' || checkoutPlan === 'PRO') ? (
                                     <div className="space-y-4 animate-[fadeIn_0.2s_ease-out]">
-                                      <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-3">
-                                        <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-widest text-slate-900 font-mono">
-                                          <span>Suscripción Segura de PayPal</span>
-                                          <span className="text-emerald-700 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded text-[8.5px]">Cifrado SSL / Pago Recurrente</span>
-                                        </div>
-                                        <p className="text-[10px] text-slate-500 leading-relaxed">
-                                          Utiliza el botón de PayPal para suscribirte a la membresía <b>{checkoutPlan === 'RETAIL' ? 'Básica (Socio Básico)' : 'Avanzada (Socio Pro)'}</b> de manera automática por tan solo <b>{checkoutPlan === 'RETAIL' ? '$29.00 USD' : '$79.00 USD'}</b> al mes. Puedes cancelar cuando quieras directamente desde tu panel de PayPal.
-                                        </p>
-                                      </div>
+                                      {isTrialPromoSelected && checkoutPlan === 'RETAIL' ? (
+                                        <div className="space-y-3 animate-[fadeIn_0.15s_ease-out]">
+                                          <div className="p-4 bg-[#CCFF00]/10 border border-[#CCFF00]/25 rounded-2xl space-y-1.5">
+                                            <div className="flex justify-between items-center text-[9.5px] uppercase font-bold tracking-widest text-[#a6cf00] font-mono">
+                                              <span>Portal de Prueba PayPal</span>
+                                              <span className="text-emerald-700 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded text-[8px]">Pago Seguro / Activación Al Instante</span>
+                                            </div>
+                                            <p className="text-[10px] text-slate-600 leading-relaxed font-semibold">
+                                              Presione el primer botón oficial de PayPal para autorizar su prueba.
+                                            </p>
+                                          </div>
 
-                                      <PayPalSubscriptionButton 
-                                        clientId={paymentConfig.paypalClientId || "BAA-Qyr9jMnnpjjCeqy_wmkaWooAqWlZD_H63OIR9znYei195dD7E3Eq0sjapP7OHxH6UmADRjn9wZf3Vc"}
-                                        planId={checkoutPlan === 'RETAIL' 
-                                          ? (paymentConfig.paypalPlanIdBasic || "P-6U703114N8775584UNIU4K7Y") 
-                                          : (paymentConfig.paypalPlanIdPro || "P-022706311G490222MNIU4USY")
-                                        }
-                                        onSuccess={async (subscriptionId) => {
-                                          setIsSubmittingPayment(true);
-                                          setPaymentError(null);
-                                          try {
-                                            const updatedUser = await userStore.submitPaymentReceipt(
-                                              currentUser.id,
-                                              checkoutPlan,
-                                              `PAYPAL_SUSB_ID:${subscriptionId}`
-                                            );
-                                            setCurrentUser(updatedUser);
-                                            setPaymentSuccess(`¡Suscripción de PayPal autorizada con éxito (ID: ${subscriptionId})! Esperando activación muy rápida de administración.`);
-                                            setTimeout(() => {
-                                              setCheckoutPlan(null);
-                                              setPaymentTxHash('');
-                                              setPaymentSuccess(null);
-                                            }, 6000);
-                                          } catch (err: any) {
-                                            setPaymentError('Transacción autorizada de PayPal, pero ocurrió un error guardándola en tu cuenta: ' + err.message);
-                                          } finally {
-                                            setIsSubmittingPayment(false);
-                                          }
-                                        }}
-                                        onError={(err) => {
-                                          setPaymentError(err);
-                                        }}
-                                      />
+                                          <PayPalTrialButton 
+                                             onClearError={() => setPaymentError(null)}
+                                             onSuccess={async (paymentId) => {
+                                              setIsSubmittingPayment(true);
+                                              setPaymentError(null);
+                                              try {
+                                                const updatedUser = await userStore.submitPaymentReceipt(
+                                                  currentUser.id,
+                                                  'RETAIL',
+                                                  `PAYPAL_TRIAL_ID:${paymentId}`
+                                                );
+                                                setCurrentUser(updatedUser);
+                                                setPaymentSuccess(`¡Pago autorizado con éxito (ID: ${paymentId})! La administración activará tu semana de prueba básica de inmediato.`);
+                                                setTimeout(() => {
+                                                  setCheckoutPlan(null);
+                                                  setIsTrialPromoSelected(false);
+                                                  setPaymentSuccess(null);
+                                                }, 6000);
+                                              } catch (err: any) {
+                                                setPaymentError('Transacción autorizada de PayPal, pero ocurrió un error guardándola en tu cuenta: ' + err.message);
+                                              } finally {
+                                                setIsSubmittingPayment(false);
+                                              }
+                                            }}
+                                            onError={(err) => {
+                                              setPaymentError(err);
+                                            }}
+                                          />
+                                        </div>
+                                      ) : (
+                                        <div className="space-y-3 animate-[fadeIn_0.15s_ease-out]">
+                                          <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-2">
+                                            <div className="flex justify-between items-center text-[9.5px] uppercase font-bold tracking-widest text-slate-900 font-mono">
+                                              <span>Suscripción Segura de PayPal</span>
+                                              <span className="text-emerald-700 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded text-[8.5px]">Cifrado SSL / Pago Recurrente</span>
+                                            </div>
+                                            <p className="text-[10px] text-slate-500 leading-relaxed font-semibold">
+                                              Utiliza el botón de PayPal para suscribirte a la membresía <b>{checkoutPlan === 'RETAIL' ? 'Básica (Socio Básico)' : 'Avanzada (Socio Pro)'}</b> de manera automática por tan solo <b>{checkoutPlan === 'RETAIL' ? '$29.00 USD' : '$79.00 USD'}</b> al mes. Puedes cancelar cuando quieras directamente desde tu panel de PayPal.
+                                            </p>
+                                          </div>
+
+                                          <PayPalSubscriptionButton 
+                                            clientId={paymentConfig.paypalClientId || "BAA-Qyr9jMnnpjjCeqy_wmkaWooAqWlZD_H63OIR9znYei195dD7E3Eq0sjapP7OHxH6UmADRjn9wZf3Vc"}
+                                            planId={checkoutPlan === 'RETAIL' 
+                                              ? (paymentConfig.paypalPlanIdBasic || "P-6U703114N8775584UNIU4K7Y") 
+                                              : (paymentConfig.paypalPlanIdPro || "P-022706311G490222MNIU4USY")
+                                            }
+                                            onSuccess={async (subscriptionId) => {
+                                              setIsSubmittingPayment(true);
+                                              setPaymentError(null);
+                                              try {
+                                                const updatedUser = await userStore.submitPaymentReceipt(
+                                                  currentUser.id,
+                                                  checkoutPlan,
+                                                  `PAYPAL_SUSB_ID:${subscriptionId}`
+                                                );
+                                                setCurrentUser(updatedUser);
+                                                setPaymentSuccess(`¡Suscripción de PayPal autorizada con éxito (ID: ${subscriptionId})! Esperando activación muy rápida de administración.`);
+                                                setTimeout(() => {
+                                                  setCheckoutPlan(null);
+                                                  setPaymentTxHash('');
+                                                  setPaymentSuccess(null);
+                                                }, 6000);
+                                              } catch (err: any) {
+                                                setPaymentError('Transacción autorizada de PayPal, pero ocurrió un error guardándola en tu cuenta: ' + err.message);
+                                              } finally {
+                                                setIsSubmittingPayment(false);
+                                              }
+                                            }}
+                                            onError={(err) => {
+                                              setPaymentError(err);
+                                            }}
+                                          />
+                                        </div>
+                                      )}
                                     </div>
                                   ) : (
                                     <div className="p-4 text-center space-y-2 bg-slate-50 border border-slate-100 rounded-2xl">
@@ -3058,18 +3197,53 @@ export default function App() {
                       Proporciona tu propia clave de API de Gemini para habilitar el motor de IA XAU KIN en enlaces compartidos, producción y fuera de desarrollo.
                     </p>
 
-                    <div className="space-y-4 mb-6">
+                    <div className="space-y-4 mb-6 font-sans">
                       <div>
-                        <label className="text-[9px] uppercase tracking-wider font-extrabold text-slate-400 block mb-2">CLAVE API PERSONAL (Google AI Studio)</label>
-                        <input
-                          type="password"
-                          value={customApiKey}
-                          onChange={(e) => setCustomApiKey(e.target.value)}
-                          placeholder="AIzaSy..."
-                          className="w-full h-12 bg-slate-50 border border-slate-250 rounded-xl px-4 text-xs font-mono focus:outline-none focus:border-brand-lime transition-colors"
-                        />
+                        <label className="text-[9px] uppercase tracking-wider font-extrabold text-slate-400 block mb-2">
+                          CLAVE API PERSONAL (Google AI Studio)
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="password"
+                            value={customApiKey}
+                            onChange={(e) => {
+                              setCustomApiKey(e.target.value);
+                              if (testKeyResult) setTestKeyResult(null);
+                            }}
+                            placeholder="AIzaSy..."
+                            className="flex-1 h-12 bg-slate-50 border border-slate-250 rounded-xl px-4 text-xs font-mono focus:outline-none focus:border-brand-lime transition-colors"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => testManualApiKey(customApiKey)}
+                            disabled={isTestingKey}
+                            className="h-12 px-4 bg-slate-900 text-[#CCFF00] hover:bg-slate-800 disabled:opacity-50 font-black text-[10px] uppercase tracking-wider rounded-xl transition-all flex items-center justify-center min-w-[90px] cursor-pointer shadow-sm"
+                          >
+                            {isTestingKey ? (
+                              <div className="w-4 h-4 border-2 border-[#CCFF00] border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                              "Probar"
+                            )}
+                          </button>
+                        </div>
                       </div>
-                      <p className="text-[10px] text-slate-400 leading-relaxed">
+
+                      {testKeyResult && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: -5 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className={`p-3.5 rounded-xl text-[10px] leading-normal font-bold flex items-start gap-2.5 ${
+                            testKeyResult.success 
+                              ? 'bg-emerald-50 text-emerald-800 border border-emerald-100/80 shadow-sm' 
+                              : 'bg-rose-50 text-rose-800 border border-rose-100/80 shadow-sm'
+                          }`}
+                        >
+                          <span className="text-xs select-none">{testKeyResult.success ? '✅' : '❌'}</span>
+                          <div className="break-all">{testKeyResult.message}</div>
+                        </motion.div>
+                      )}
+
+                      <p className="text-[10px] text-slate-400 leading-relaxed font-medium">
                         ¿No tienes una clave? Consíguela gratis en{" "}
                         <a 
                           href="https://aistudio.google.com/app/apikey" 
@@ -3082,17 +3256,21 @@ export default function App() {
                       </p>
                     </div>
 
-                    <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-3 font-sans">
                       <button 
                         onClick={() => {
-                          if (customApiKey.trim() === "") {
+                          const cleaned = cleanKey(customApiKey);
+                          if (cleaned === "") {
                             localStorage.removeItem("manual_gemini_api_key");
+                            setCustomApiKey("");
                           } else {
-                            localStorage.setItem("manual_gemini_api_key", customApiKey.trim());
+                            localStorage.setItem("manual_gemini_api_key", cleaned);
+                            setCustomApiKey(cleaned);
                           }
+                          setTestKeyResult(null);
                           setShowKeyConfig(false);
                         }}
-                        className="w-full py-4 bg-brand-navy text-brand-lime rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg"
+                        className="w-full py-4 bg-slate-900 text-[#CCFF00] rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg cursor-pointer"
                       >
                         Guardar Clave
                       </button>
@@ -3100,16 +3278,20 @@ export default function App() {
                         <button 
                           onClick={() => {
                             setCustomApiKey("");
+                            setTestKeyResult(null);
                             localStorage.removeItem("manual_gemini_api_key");
                             setShowKeyConfig(false);
                           }}
-                          className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 rounded-xl font-bold text-[9px] uppercase tracking-widest text-red-500 transition-colors"
+                          className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 rounded-xl font-bold text-[9px] uppercase tracking-widest text-red-500 transition-colors cursor-pointer"
                         >
                           Eliminar Clave
                         </button>
                         <button 
-                          onClick={() => setShowKeyConfig(false)}
-                          className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-[9px] uppercase tracking-widest text-slate-600 transition-colors"
+                          onClick={() => {
+                            setTestKeyResult(null);
+                            setShowKeyConfig(false);
+                          }}
+                          className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-[9px] uppercase tracking-widest text-slate-600 transition-colors cursor-pointer"
                         >
                           Cancelar
                         </button>
@@ -3190,7 +3372,13 @@ export default function App() {
               onUpdateUser={(updatedUser) => setCurrentUser(updatedUser)}
               handleLogout={handleLogout}
               initialTab={profileModalTab}
-              onSelectPlan={(plan) => setCheckoutPlan(plan)}
+              onSelectPlan={(plan, isTrial) => {
+                setCheckoutPlan(plan);
+                setIsTrialPromoSelected(!!isTrial);
+                if (isTrial) {
+                  setPaymentMethod('PAYPAL');
+                }
+              }}
             />
 
             {/* Expiration Warning Popup Dialog Modal */}
