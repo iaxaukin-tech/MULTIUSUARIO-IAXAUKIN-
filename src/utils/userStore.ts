@@ -597,5 +597,89 @@ export const userStore = {
     } catch (err) {
       return handleFirestoreError(err, OperationType.LIST, path);
     }
+  },
+
+  // Submit user onboarding questionnaire
+  async submitOnboarding(
+    userId: string, 
+    data: { 
+      source: string; 
+      goldExperience?: string; 
+      primaryGoal?: string; 
+      retentionPreference?: string;
+      experience?: string;
+      goldKnowledge?: string;
+      goals?: string[];
+      retentionFactors?: string[];
+    }
+  ): Promise<User> {
+    const path = `users/${userId}`;
+    const docRef = doc(db, 'users', userId);
+    try {
+      const payload = {
+        onboardingCompleted: true,
+        onboardingData: {
+          ...data,
+          completedAt: new Date().toISOString()
+        }
+      };
+      await updateDoc(docRef, payload);
+      const snap = await getDoc(docRef);
+      return snap.data() as User;
+    } catch (err) {
+      return handleFirestoreError(err, OperationType.WRITE, path);
+    }
+  },
+
+  // Submit a user suggestion/feedback
+  async submitSuggestion(
+    userId: string,
+    username: string,
+    email: string,
+    suggestion: { title: string; description: string; category: string }
+  ): Promise<void> {
+    const id = `sugg_${Math.random().toString(36).substring(2, 9)}`;
+    const path = `suggestions/${id}`;
+    try {
+      await setDoc(doc(db, 'suggestions', id), {
+        id,
+        userId,
+        username,
+        email,
+        title: suggestion.title.trim(),
+        description: suggestion.description.trim(),
+        category: suggestion.category,
+        status: 'PENDING',
+        createdAt: new Date().toISOString()
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, path);
+    }
+  },
+
+  // Get all suggestions (admin restricted)
+  async getSuggestions(): Promise<any[]> {
+    const path = 'suggestions';
+    try {
+      const q = query(collection(db, 'suggestions'), orderBy('createdAt', 'desc'));
+      const querySnapshot = await getDocs(q);
+      const results: any[] = [];
+      querySnapshot.forEach((doc) => {
+        results.push(doc.data());
+      });
+      return results;
+    } catch (err) {
+      return handleFirestoreError(err, OperationType.LIST, path);
+    }
+  },
+
+  // Update suggestion status
+  async updateSuggestionStatus(id: string, status: 'PENDING' | 'REVIEWED' | 'IMPLEMENTED'): Promise<void> {
+    const path = `suggestions/${id}`;
+    try {
+      await updateDoc(doc(db, 'suggestions', id), { status });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, path);
+    }
   }
 };

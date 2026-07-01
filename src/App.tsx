@@ -18,6 +18,7 @@ import {
   Copy,
   Check,
   LogOut,
+  MessageSquare,
   Users,
   Settings,
   Plus,
@@ -48,10 +49,14 @@ import { PayPalTrialButton } from './components/PayPalTrialButton';
 import { CameraModal } from './components/CameraModal';
 import { ProfileModal } from './components/ProfileModal';
 import { InstitutionalBoard } from './components/InstitutionalBoard';
+import { OnboardingModal } from './components/OnboardingModal';
+import { SuggestionsModal } from './components/SuggestionsModal';
 import { userStore } from './utils/userStore';
 import { User, ActivationCode, SubscriptionPlan, PLAN_DETAILS } from './types';
 import { auth } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db } from './lib/firebase';
 
 const Logo = ({ className = "" }: { className?: string }) => (
   <img 
@@ -122,14 +127,14 @@ Directrices:
 
 🔴 Sesgo Estratégico: (LONG 🟢 o SHORT 🔴)
 
-(Generar entre 5 y 7 vectores de entrada con timestamps lógicos, SIEMPRE en formato 12h AM/PM)
+(Generar entre 5 y 7 vectores de entrada con timestamps lógicos, SIEMPRE en formato 12h AM/PM. CADA VECTOR DEBE INCLUIR EXPLICITAMENTE EL MOTIVO TÉCNICO EN PARENTESIS AL FINAL)
 
 Ejemplo:
 
-12:24 AM — SHORT 🔴  
-12:32 AM — SHORT 🔴  
-12:41 AM — SHORT 🔴  
-12:55 AM — SHORT 🔴  
+12:24 AM — SHORT 🔴 (Mitigación de FVG de 1m en bloque premium)
+12:32 AM — SHORT 🔴 (Toma de liquidez de máximos e inducción)
+12:41 AM — SHORT 🔴 (Testeo de Order Block bajista validado)
+12:55 AM — SHORT 🔴 (Expansión por desequilibrio en retroceso macro)
 
 🎯 Target Objetivo: +10 pips (1.0 pt)
 
@@ -223,14 +228,14 @@ Directrices:
 
 🔴 Sesgo Estratégico: (LONG 🟢 o SHORT 🔴)
 
-(Generar entre 5 y 7 vectores de entrada con timestamps lógicos, SIEMPRE en formato 12h AM/PM)
+(Generar entre 5 y 7 vectores de entrada con timestamps lógicos, SIEMPRE en formato 12h AM/PM. CADA VECTOR DEBE INCLUIR EXPLICITAMENTE EL MOTIVO TÉCNICO EN PARENTESIS AL FINAL)
 
 Ejemplo:
 
-12:24 AM — SHORT 🔴  
-12:32 AM — SHORT 🔴  
-12:41 AM — SHORT 🔴  
-12:55 AM — SHORT 🔴  
+12:24 AM — SHORT 🔴 (Mitigación de FVG de 1m en bloque premium)
+12:32 AM — SHORT 🔴 (Toma de liquidez de máximos e inducción)
+12:41 AM — SHORT 🔴 (Testeo de Order Block bajista validado)
+12:55 AM — SHORT 🔴 (Expansión por desequilibrio en retroceso macro)
 
 🎯 Target Objetivo: +10 pips (1.0 pt)
 
@@ -325,8 +330,30 @@ export function generateSimulatedAnalysis(durationMinutes: number = 60): string 
   report += `🔴 **Sesgo Estratégico:** ${bias} ${biasEmoji}\n\n`;
   report += `**Vectores de Entrada:**\n`;
 
-  entryTimestamps.forEach((t) => {
-    report += `* ${t} — ${bias} ${biasEmoji}\n`;
+  const longMotives = [
+    "Mitigación de FVG de 1m en bloque de descuento",
+    "Toma de liquidez en mínimos estructurales e inducción de ventas",
+    "Rechazo en bloque de órdenes institucional con volumen de compras",
+    "Confluencia con nivel de retroceso OTE - Optimal Trade Entry",
+    "Cruce alcista del algoritmo de volatilidad media de 1m",
+    "Búsqueda de equilibrio en ineficiencia de rango de 5m"
+  ];
+
+  const shortMotives = [
+    "Mitigación de FVG de 1m en bloque premium",
+    "Toma de liquidez en máximos estructurales e inducción de compras",
+    "Rechazo en bloque de órdenes institucional con volumen de ventas",
+    "Confluencia con nivel de retroceso OTE - Optimal Trade Entry",
+    "Cruce bajista del algoritmo de volatilidad media de 1m",
+    "Búsqueda de equilibrio en ineficiencia de rango de 5m"
+  ];
+
+  const motives = bias === 'LONG' ? longMotives : shortMotives;
+  const shuffledMotives = [...motives].sort(() => 0.5 - Math.random());
+
+  entryTimestamps.forEach((t, idx) => {
+    const motive = shuffledMotives[idx % shuffledMotives.length];
+    report += `* ${t} — ${bias} ${biasEmoji} (${motive})\n`;
   });
 
   report += `\n🎯 **Target Objetivo:** +10 pips (1.0 pt)\n\n`;
@@ -397,15 +424,70 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
 
-  const [image, setImage] = useState<string | null>(null);
+  const [image, setImage] = useState<string | null>(() => {
+    try {
+      return sessionStorage.getItem('xau_kin_last_image') || null;
+    } catch {
+      return null;
+    }
+  });
   const [selectedDuration, setSelectedDuration] = useState<30 | 60>(60);
-  const [mimeType, setMimeType] = useState<string>("image/png");
+  const [mimeType, setMimeType] = useState<string>(() => {
+    try {
+      return sessionStorage.getItem('xau_kin_last_mimetype') || "image/png";
+    } catch {
+      return "image/png";
+    }
+  });
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [analysis, setAnalysis] = useState<string | null>(null);
+  const [analysis, setAnalysis] = useState<string | null>(() => {
+    try {
+      return sessionStorage.getItem('xau_kin_last_analysis') || null;
+    } catch {
+      return null;
+    }
+  });
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+
+  // Synchronize telemetry state to sessionStorage for session persistence
+  useEffect(() => {
+    try {
+      if (analysis) {
+        sessionStorage.setItem('xau_kin_last_analysis', analysis);
+      } else {
+        sessionStorage.removeItem('xau_kin_last_analysis');
+      }
+    } catch (e) {
+      console.warn("sessionStorage not available", e);
+    }
+  }, [analysis]);
+
+  useEffect(() => {
+    try {
+      if (image) {
+        sessionStorage.setItem('xau_kin_last_image', image);
+      } else {
+        sessionStorage.removeItem('xau_kin_last_image');
+      }
+    } catch (e) {
+      console.warn("sessionStorage not available", e);
+    }
+  }, [image]);
+
+  useEffect(() => {
+    try {
+      if (mimeType) {
+        sessionStorage.setItem('xau_kin_last_mimetype', mimeType);
+      } else {
+        sessionStorage.removeItem('xau_kin_last_mimetype');
+      }
+    } catch (e) {
+      console.warn("sessionStorage not available", e);
+    }
+  }, [mimeType]);
 
   // Safeguard: Lock Básico (RETAIL) users strictly to 60-minute windows on login / plan detection
   useEffect(() => {
@@ -427,6 +509,7 @@ export default function App() {
   
   // Custom navigation state for Admins and Institutional partners
   const [viewMode, setViewMode] = useState<'TERMINAL' | 'ADMIN_BOARD' | 'INSTITUTIONAL_BOARD'>('TERMINAL');
+  const [adminSubTab, setAdminSubTab] = useState<'OPERADORES' | 'ONBOARDING' | 'SUGERENCIAS'>('OPERADORES');
 
   // Inactive profile activation state
   const [activationCode, setActivationCode] = useState('');
@@ -455,6 +538,7 @@ export default function App() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [profileModalTab, setProfileModalTab] = useState<'profile' | 'password' | 'calendar' | 'membership'>('profile');
   const [showExpirationAlertPopup, setShowExpirationAlertPopup] = useState(false);
+  const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
 
   // Auto-trigger membership expiration alert modal if 5 or fewer days are remaining
   useEffect(() => {
@@ -625,6 +709,7 @@ export default function App() {
 
   // Admin View state references
   const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [allSuggestions, setAllSuggestions] = useState<any[]>([]);
   const [adminSearchQuery, setAdminSearchQuery] = useState('');
   const [adminFilterPlan, setAdminFilterPlan] = useState<string>('ALL');
   const [adminFilterStatus, setAdminFilterStatus] = useState<string>('ALL');
@@ -778,21 +863,44 @@ export default function App() {
             await userStore.ensureDefaultCoupon();
           }
           
-          const [fetchedUsers, fetchedCodes] = await Promise.all([
+          const [fetchedUsers, fetchedCodes, fetchedSuggestions] = await Promise.all([
             currentUser?.role === 'ADMIN'
               ? userStore.getUsers()
               : userStore.getReferredUsers(currentUser.referralCode || currentUser.username || ''),
-            currentUser?.role === 'ADMIN' ? userStore.getCodes() : Promise.resolve([])
+            currentUser?.role === 'ADMIN' ? userStore.getCodes() : Promise.resolve([]),
+            currentUser?.role === 'ADMIN' ? userStore.getSuggestions() : Promise.resolve([])
           ]);
           setAllUsers(fetchedUsers);
           if (currentUser?.role === 'ADMIN') {
             setAllCodes(fetchedCodes);
+            setAllSuggestions(fetchedSuggestions);
           }
         } catch (err: any) {
           console.error("Error fetching datasets:", err);
         }
       };
       fetchAdminData();
+    }
+  }, [currentUser]);
+
+  // Preload Gemini API Key from Firestore settings/gemini if user is ADMIN
+  useEffect(() => {
+    if (currentUser?.role === 'ADMIN') {
+      const loadDatabaseApiKey = async () => {
+        try {
+          const snap = await getDoc(doc(db, 'settings', 'gemini'));
+          if (snap.exists()) {
+            const data = snap.data();
+            if (data && data.apiKey) {
+              setCustomApiKey(data.apiKey);
+              localStorage.setItem("manual_gemini_api_key", data.apiKey);
+            }
+          }
+        } catch (err) {
+          console.warn("Fallo al precargar la clave API desde Firestore settings/gemini:", err);
+        }
+      };
+      loadDatabaseApiKey();
     }
   }, [currentUser]);
 
@@ -1278,6 +1386,18 @@ export default function App() {
 
                   <div className="h-3.5 w-[1px] bg-slate-200" />
 
+                  {/* Suggestions trigger */}
+                  <button
+                    onClick={() => setIsSuggestionsOpen(true)}
+                    className="flex items-center gap-1.5 text-[10px] text-slate-500 hover:text-black transition-colors cursor-pointer group uppercase tracking-wider font-extrabold"
+                    title="Aportar sugerencias o modificaciones"
+                  >
+                    <MessageSquare size={13} className="text-brand-lime" />
+                    <span className="hidden xs:inline sm:inline">Sugerencias</span>
+                  </button>
+
+                  <div className="h-3.5 w-[1px] bg-slate-200" />
+
                   {/* Logged profile banner - Clickable user session profile trigger */}
                   <button
                     type="button"
@@ -1351,8 +1471,47 @@ export default function App() {
                     </div>
                   </section>
 
-                  {/* Sección de Control - Alertas de Cobro y Vencimiento */}
-                  <div className="glass-card rounded-[2rem] p-7 shadow-premium border border-amber-200/40 bg-gradient-to-br from-amber-50/20 to-transparent">
+                  {/* Admin Sub-navigation tabs */}
+                  <div className="flex flex-wrap border-b border-slate-200 gap-1 mt-4">
+                    <button
+                      type="button"
+                      onClick={() => setAdminSubTab('OPERADORES')}
+                      className={`px-5 py-3 text-xs uppercase tracking-wider font-extrabold transition-all border-b-2 cursor-pointer ${
+                        adminSubTab === 'OPERADORES'
+                          ? 'border-brand-lime text-slate-900 font-black'
+                          : 'border-transparent text-slate-400 hover:text-slate-600'
+                      }`}
+                    >
+                      👥 Gestión de Operadores
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdminSubTab('ONBOARDING')}
+                      className={`px-5 py-3 text-xs uppercase tracking-wider font-extrabold transition-all border-b-2 cursor-pointer ${
+                        adminSubTab === 'ONBOARDING'
+                          ? 'border-brand-lime text-slate-900 font-black'
+                          : 'border-transparent text-slate-400 hover:text-slate-600'
+                      }`}
+                    >
+                      📊 Métricas de Adquisición & Perfiles
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdminSubTab('SUGERENCIAS')}
+                      className={`px-5 py-3 text-xs uppercase tracking-wider font-extrabold transition-all border-b-2 cursor-pointer ${
+                        adminSubTab === 'SUGERENCIAS'
+                          ? 'border-brand-lime text-slate-900 font-black'
+                          : 'border-transparent text-slate-400 hover:text-slate-600'
+                      }`}
+                    >
+                      💡 Sugerencias y Aportes ({allSuggestions.length})
+                    </button>
+                  </div>
+
+                  {adminSubTab === 'OPERADORES' && (
+                    <div className="space-y-12 animate-[fadeIn_0.25s_ease-out]">
+                      {/* Sección de Control - Alertas de Cobro y Vencimiento */}
+                      <div className="glass-card rounded-[2rem] p-7 shadow-premium border border-amber-200/40 bg-gradient-to-br from-amber-50/20 to-transparent">
                     <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-rose-100/10 pb-5">
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
@@ -2094,6 +2253,305 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+                  </div>
+                  )}
+
+                  {/* Onboarding Statistics Sub-tab */}
+                  {adminSubTab === 'ONBOARDING' && (() => {
+                    const onboardingUsers = allUsers.filter(u => u.onboardingCompleted && u.onboardingData);
+                    
+                    const sourceCounts: Record<string, number> = {};
+                    const experienceCounts: Record<string, number> = {};
+                    const goldKnowledgeCounts: Record<string, number> = {};
+                    const goalsCounts: Record<string, number> = {};
+                    const retentionCounts: Record<string, number> = {};
+                    
+                    onboardingUsers.forEach(u => {
+                      const data = u.onboardingData!;
+                      if (data.source) sourceCounts[data.source] = (sourceCounts[data.source] || 0) + 1;
+                      if (data.experience) experienceCounts[data.experience] = (experienceCounts[data.experience] || 0) + 1;
+                      if (data.goldKnowledge) goldKnowledgeCounts[data.goldKnowledge] = (goldKnowledgeCounts[data.goldKnowledge] || 0) + 1;
+                      if (Array.isArray(data.goals)) {
+                        data.goals.forEach(g => {
+                          goalsCounts[g] = (goalsCounts[g] || 0) + 1;
+                        });
+                      }
+                      if (Array.isArray(data.retentionFactors)) {
+                        data.retentionFactors.forEach(r => {
+                          retentionCounts[r] = (retentionCounts[r] || 0) + 1;
+                        });
+                      }
+                    });
+
+                    const totalOnboarded = onboardingUsers.length || 1; // avoid divide by zero
+
+                    const getPercentage = (count: number) => {
+                      return Math.round((count / totalOnboarded) * 100);
+                    };
+
+                    return (
+                      <div className="space-y-8 animate-[fadeIn_0.25s_ease-out]">
+                        {/* Onboarding Summary card */}
+                        <div className="glass-card rounded-[2rem] p-7 shadow-premium border border-slate-100 bg-white">
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-5 mb-6">
+                            <div>
+                              <h3 className="text-lg font-serif italic text-slate-900 font-bold">Encuestas de Registro & Inteligencia de Tráfico</h3>
+                              <p className="text-[9px] uppercase tracking-widest text-slate-400 font-bold">Canales de pauta y análisis demográfico de los traders registrados</p>
+                            </div>
+                            <span className="bg-[#CCFF00]/15 text-slate-900 border border-[#CCFF00]/30 px-3 py-1 rounded-full text-xs font-black">
+                              {onboardingUsers.length} Encuestas Completadas
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            {/* Lead Acquisition Channels */}
+                            <div className="space-y-4 bg-slate-50/50 p-6 rounded-[1.5rem] border border-slate-100">
+                              <h4 className="text-xs uppercase tracking-wider text-slate-500 font-black flex items-center gap-2">
+                                📢 CANALES DE PAUTA (LOOKALIKE DATA)
+                              </h4>
+                              <p className="text-[10px] text-slate-400 leading-relaxed">
+                                Distribución de adquisición de clientes. Utiliza estos porcentajes para optimizar tu presupuesto en Facebook Ads, TikTok Ads o campañas en Telegram.
+                              </p>
+                              <div className="space-y-3 pt-2">
+                                {['Facebook Ads', 'TikTok Ads', 'Canal de Telegram', 'Instagram / Reels', 'YouTube', 'Recomendación de amigo', 'Otro'].map((source) => {
+                                  const count = sourceCounts[source] || 0;
+                                  const pct = getPercentage(count);
+                                  return (
+                                    <div key={source} className="space-y-1">
+                                      <div className="flex justify-between text-xs font-semibold text-slate-700 font-mono">
+                                        <span>{source}</span>
+                                        <span>{count} ({pct}%)</span>
+                                      </div>
+                                      <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
+                                        <div 
+                                          className="h-full bg-brand-lime transition-all duration-500" 
+                                          style={{ width: `${pct}%` }} 
+                                        />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Operator Experience & Gold Knowledge */}
+                            <div className="space-y-6">
+                              {/* Experience Levels */}
+                              <div className="space-y-4 bg-slate-50/50 p-6 rounded-[1.5rem] border border-slate-100">
+                                <h4 className="text-xs uppercase tracking-wider text-slate-500 font-black flex items-center gap-2">
+                                  ⚡ NIVEL DE EXPERIENCIA DEL TRADER
+                                </h4>
+                                <div className="space-y-3">
+                                  {['Novato / Sin experiencia', 'Intermedio', 'Avanzado', 'Profesional / Institucional'].map((exp) => {
+                                    const count = experienceCounts[exp] || 0;
+                                    const pct = getPercentage(count);
+                                    return (
+                                      <div key={exp} className="space-y-1">
+                                        <div className="flex justify-between text-xs font-semibold text-slate-700 font-mono">
+                                          <span>{exp}</span>
+                                          <span>{count} ({pct}%)</span>
+                                        </div>
+                                        <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
+                                          <div 
+                                            className="h-full bg-fx-blue transition-all duration-500" 
+                                            style={{ width: `${pct}%` }} 
+                                          />
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* Gold Knowledge Specific Focus */}
+                              <div className="space-y-4 bg-slate-50/50 p-6 rounded-[1.5rem] border border-slate-100">
+                                <h4 className="text-xs uppercase tracking-wider text-[#D4AF37] font-black flex items-center gap-2">
+                                  👑 CONOCIMIENTO ESPECÍFICO DEL ORO (XAUUSD)
+                                </h4>
+                                <div className="space-y-3">
+                                  {[
+                                    'Sí, domino el spread y volatilidad del oro',
+                                    'Conozco lo básico',
+                                    'No conozco el activo, me asusta su volatilidad'
+                                  ].map((know) => {
+                                    const count = goldKnowledgeCounts[know] || 0;
+                                    const pct = getPercentage(count);
+                                    return (
+                                      <div key={know} className="space-y-1">
+                                        <div className="flex justify-between text-xs font-semibold text-slate-700 font-mono">
+                                          <span className="truncate max-w-[280px]" title={know}>{know}</span>
+                                          <span>{count} ({pct}%)</span>
+                                        </div>
+                                        <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
+                                          <div 
+                                            className="h-full bg-amber-500 transition-all duration-500" 
+                                            style={{ width: `${pct}%` }} 
+                                          />
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-8 border-t border-slate-100 pt-8">
+                            {/* Primary Objectives */}
+                            <div className="space-y-4 bg-slate-50/50 p-6 rounded-[1.5rem] border border-slate-100">
+                              <h4 className="text-xs uppercase tracking-wider text-slate-500 font-black flex items-center gap-2">
+                                🎯 OBJETIVOS DE LOS SOCIOS AL REGISTRARSE
+                              </h4>
+                              <div className="space-y-3">
+                                {[
+                                  'Lograr consistencia operando Oro (XAUUSD)',
+                                  'Pasar o gestionar cuentas de fondeo',
+                                  'Diversificar mi portafolio de inversión',
+                                  'Recibir señales y reportes automáticos',
+                                  'Otro objetivo de trading'
+                                ].map((goal) => {
+                                  const count = goalsCounts[goal] || 0;
+                                  const pct = getPercentage(count);
+                                  return (
+                                    <div key={goal} className="space-y-1">
+                                      <div className="flex justify-between text-xs font-semibold text-slate-700 font-mono">
+                                        <span>{goal}</span>
+                                        <span>{count} ({pct}%)</span>
+                                      </div>
+                                      <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
+                                        <div 
+                                          className="h-full bg-emerald-500 transition-all duration-500" 
+                                          style={{ width: `${pct}%` }} 
+                                        />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Retention Factors */}
+                            <div className="space-y-4 bg-slate-50/50 p-6 rounded-[1.5rem] border border-slate-100">
+                              <h4 className="text-xs uppercase tracking-wider text-indigo-500 font-black flex items-center gap-2">
+                                💰 RETENCIÓN DE MENSUALIDAD (¿CÓMO RETENER AL CLIENTE?)
+                              </h4>
+                              <p className="text-[10px] text-slate-400 leading-relaxed">
+                                Qué valor añadido motiva más a tus traders a renovar su suscripción mes con mes para mantener la membresía activa.
+                              </p>
+                              <div className="space-y-3 pt-2">
+                                {[
+                                  'Alertas móviles instantáneas en vivo',
+                                  'Webinars educativos de trading de Oro',
+                                  'Soporte técnico preferencial 24/7',
+                                  'Descuentos especiales por renovaciones consecutivas',
+                                  'Más variedad de activos analizados por la IA'
+                                ].map((factor) => {
+                                  const count = retentionCounts[factor] || 0;
+                                  const pct = getPercentage(count);
+                                  return (
+                                    <div key={factor} className="space-y-1">
+                                      <div className="flex justify-between text-xs font-semibold text-slate-700 font-mono">
+                                        <span>{factor}</span>
+                                        <span>{count} ({pct}%)</span>
+                                      </div>
+                                      <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
+                                        <div 
+                                          className="h-full bg-indigo-500 transition-all duration-500" 
+                                          style={{ width: `${pct}%` }} 
+                                        />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Suggestions list sub-tab */}
+                  {adminSubTab === 'SUGERENCIAS' && (
+                    <div className="space-y-6 animate-[fadeIn_0.25s_ease-out]">
+                      <div className="glass-card rounded-[2rem] p-7 shadow-premium border border-slate-100 bg-white">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+                          <div>
+                            <h3 className="text-lg font-serif italic text-slate-900 font-bold">Sugerencias y Aportes de Socios</h3>
+                            <p className="text-[9px] uppercase tracking-widest text-slate-400 font-bold">Propuestas de modificación del sistema y la IA</p>
+                          </div>
+                          <span className="bg-brand-lime/10 text-slate-900 border border-brand-lime/25 px-3 py-1 rounded-full text-xs font-bold">
+                            {allSuggestions.length} Registradas
+                          </span>
+                        </div>
+
+                        {allSuggestions.length === 0 ? (
+                          <div className="py-16 text-center text-slate-400 font-serif italic font-semibold">
+                            No se ha recibido ninguna sugerencia de los socios todavía.
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto pr-2 mt-5 space-y-4">
+                            {allSuggestions.map((s) => (
+                              <div key={s.id} className="pt-4 first:pt-0 pb-4 flex flex-col gap-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`px-2 py-0.5 text-[8px] font-mono font-black uppercase rounded ${
+                                      s.category === 'BUG' ? 'bg-red-55 text-red-750 border border-red-200 bg-red-50' :
+                                      s.category === 'FEATURE' ? 'bg-brand-lime/10 text-slate-900 border border-brand-lime/20' :
+                                      s.category === 'IMPROVEMENT' ? 'bg-blue-50 text-blue-600 border border-blue-200' :
+                                      'bg-slate-100 text-slate-600 border border-slate-200'
+                                    }`}>
+                                      {s.category}
+                                    </span>
+                                    <h4 className="font-sans font-bold text-sm text-slate-900">{s.title}</h4>
+                                  </div>
+
+                                  {/* Update Status Selector */}
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Estado:</span>
+                                    <select
+                                      value={s.status || 'PENDING'}
+                                      onChange={async (e) => {
+                                        const newStatus = e.target.value as any;
+                                        try {
+                                          await userStore.updateSuggestionStatus(s.id, newStatus);
+                                          setAllSuggestions(prev => prev.map(item => item.id === s.id ? { ...item, status: newStatus } : item));
+                                        } catch (err) {
+                                          console.error("Error actualizando estado:", err);
+                                        }
+                                      }}
+                                      className={`px-2 py-1 rounded text-[10px] font-mono font-bold uppercase focus:outline-none focus:ring-1 border ${
+                                        s.status === 'IMPLEMENTED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                        s.status === 'REVIEWED' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                        'bg-amber-50 text-amber-700 border-amber-200'
+                                      }`}
+                                    >
+                                      <option value="PENDING">Pendiente ⏳</option>
+                                      <option value="REVIEWED">Revisado 👀</option>
+                                      <option value="IMPLEMENTED">Implementado ✓</option>
+                                    </select>
+                                  </div>
+                                </div>
+
+                                <p className="text-xs text-slate-600 leading-relaxed bg-slate-50/50 p-3 rounded-xl border border-slate-100">
+                                  {s.description}
+                                </p>
+
+                                <div className="flex items-center justify-between text-[8.5px] text-slate-400 font-mono">
+                                  <div>
+                                    Por: <span className="font-bold text-slate-700">@{s.username || 'Desconocido'}</span> ({s.email})
+                                  </div>
+                                  <div>
+                                    {s.createdAt ? new Date(s.createdAt).toLocaleString() : 'Recién enviado'}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </motion.main>
               ) : currentUser.status !== 'ACTIVE' && currentUser.role !== 'ADMIN' ? (
                 /* =================== BILLING / PAYWALL GATE =================== */
@@ -2891,6 +3349,119 @@ export default function App() {
                         </div>
                       </div>
 
+                      <button
+                        onClick={handleButtonClick}
+                        disabled={(!image && !analysis) || isAnalyzing}
+                        className={`w-full py-5 rounded-2xl font-bold text-xs uppercase tracking-[0.2em] flex items-center justify-center gap-3 transition-all duration-300
+                          ${(!image && !analysis) || isAnalyzing 
+                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
+                            : analysis 
+                              ? 'bg-brand-navy text-brand-lime border border-brand-lime/30 hover:bg-slate-800'
+                              : 'bg-slate-900 text-white hover:bg-brand-navy hover:shadow-2xl hover:shadow-brand-lime/20 active:scale-[0.98]'}`}
+                      >
+                        {isAnalyzing ? (
+                          <>
+                            <Loader2 className="animate-spin" size={18} />
+                            Procesando Algoritmos...
+                          </>
+                        ) : analysis ? (
+                          <>
+                            <Check size={18} /> Nuevo Escaneo
+                          </>
+                        ) : (
+                          <>
+                            Ejecutar Modelado <ChevronRight size={16} />
+                          </>
+                        )}
+                      </button>
+
+                      {error && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="p-5 bg-red-50 border border-red-100 rounded-2xl flex flex-col gap-3 text-red-600 text-xs font-medium"
+                        >
+                          <div className="flex items-start gap-4">
+                            <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+                            <div className="space-y-1">
+                              <p className="font-extrabold text-[12px] uppercase tracking-wider text-rose-800">
+                                {error.includes("CLAVE API") || error.includes("API_KEY_MISSING") || error.toLowerCase().includes("api key not valid") || error.toLowerCase().includes("key not valid") || error.toLowerCase().includes("invalid_argument") || error.toLowerCase().includes("not valid")
+                                  ? "🚨 Error de Clave API de Gemini"
+                                  : "Atención"}
+                              </p>
+                              <p className="leading-relaxed text-rose-700">{error}</p>
+                            </div>
+                          </div>
+
+                          {(error.includes("CLAVE API") || error.includes("API_KEY_MISSING") || error.toLowerCase().includes("api key not valid") || error.toLowerCase().includes("key not valid") || error.toLowerCase().includes("invalid_argument") || error.toLowerCase().includes("not valid")) && (
+                            <div className="mt-3 p-4 bg-white border border-rose-200/50 rounded-xl space-y-3 shadow-sm text-slate-700">
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                Configura / Corrige tu Clave API aquí mismo:
+                              </p>
+                              <div className="flex gap-2">
+                                <input
+                                  type="password"
+                                  value={customApiKey}
+                                  onChange={(e) => {
+                                    setCustomApiKey(e.target.value);
+                                    if (testKeyResult) setTestKeyResult(null);
+                                  }}
+                                  placeholder="AIzaSy..."
+                                  className="flex-1 h-10 bg-slate-50 border border-slate-200 rounded-lg px-3 text-xs font-mono text-slate-800 focus:outline-none focus:border-slate-400 transition-colors"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => testManualApiKey(customApiKey)}
+                                  disabled={isTestingKey}
+                                  className="h-10 px-3.5 bg-slate-950 text-[#CCFF00] hover:bg-slate-800 disabled:opacity-50 font-black text-[9px] uppercase tracking-wider rounded-lg transition-all flex items-center justify-center min-w-[70px] cursor-pointer shadow-sm"
+                                >
+                                  {isTestingKey ? (
+                                    <div className="w-3.5 h-3.5 border-2 border-[#CCFF00] border-t-transparent rounded-full animate-spin" />
+                                  ) : (
+                                    "Probar"
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const cleaned = cleanKey(customApiKey);
+                                    if (cleaned === "") {
+                                      localStorage.removeItem("manual_gemini_api_key");
+                                      setCustomApiKey("");
+                                    } else {
+                                      localStorage.setItem("manual_gemini_api_key", cleaned);
+                                      setCustomApiKey(cleaned);
+                                    }
+                                    setTestKeyResult(null);
+                                    setError(null);
+                                  }}
+                                  className="h-10 px-3.5 bg-emerald-600 text-white hover:bg-emerald-700 font-bold text-[9px] uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-sm"
+                                >
+                                  Guardar
+                                </button>
+                              </div>
+
+                              {testKeyResult && (
+                                <div 
+                                  className={`p-2.5 rounded-lg text-[9.5px] leading-normal font-bold flex items-start gap-2 ${
+                                    testKeyResult.success 
+                                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-100/80 shadow-sm' 
+                                      : 'bg-rose-50 text-rose-800 border border-rose-100/80 shadow-sm'
+                                  }`}
+                                >
+                                  <span className="text-[11px] select-none">{testKeyResult.success ? '✅' : '❌'}</span>
+                                  <div className="break-all">{testKeyResult.message}</div>
+                                </div>
+                              )}
+                              
+                              <p className="text-[9.5px] text-slate-400 leading-normal">
+                                Tu clave de Google AI Studio es gratuita y se almacena únicamente de forma local en tu navegador. Puedes crear una clave en <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-emerald-600 font-bold hover:underline">Google AI Studio</a>.
+                              </p>
+                            </div>
+                          )}
+                        </motion.div>
+                      )}
+
                       {currentUser && (
                         <div className="space-y-2 mb-4">
                           <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-widest text-slate-400 px-1">
@@ -2964,119 +3535,6 @@ export default function App() {
                             </button>
                           )}
                         </div>
-                      )}
-
-                      <button
-                        onClick={handleButtonClick}
-                        disabled={(!image && !analysis) || isAnalyzing}
-                        className={`w-full py-5 rounded-2xl font-bold text-xs uppercase tracking-[0.2em] flex items-center justify-center gap-3 transition-all duration-300
-                          ${(!image && !analysis) || isAnalyzing 
-                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
-                            : analysis 
-                              ? 'bg-brand-navy text-brand-lime border border-brand-lime/30 hover:bg-slate-800'
-                              : 'bg-slate-900 text-white hover:bg-brand-navy hover:shadow-2xl hover:shadow-brand-lime/20 active:scale-[0.98]'}`}
-                      >
-                        {isAnalyzing ? (
-                          <>
-                            <Loader2 className="animate-spin" size={18} />
-                            Procesando Algoritmos...
-                          </>
-                        ) : analysis ? (
-                          <>
-                            <Check size={18} /> Nuevo Escaneo
-                          </>
-                        ) : (
-                          <>
-                            Ejecutar Modelado <ChevronRight size={16} />
-                          </>
-                        )}
-                      </button>
-
-                      {error && (
-                        <motion.div 
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="p-5 bg-red-50 border border-red-100 rounded-2xl flex flex-col gap-3 text-red-600 text-xs font-medium"
-                        >
-                          <div className="flex items-start gap-4">
-                            <AlertTriangle size={18} className="shrink-0 mt-0.5" />
-                            <div className="space-y-1">
-                              <p className="font-extrabold text-[12px] uppercase tracking-wider text-rose-800">
-                                {error.includes("CLAVE API") || error.includes("API_KEY_MISSING") || error.toLowerCase().includes("api key not valid") || error.toLowerCase().includes("key not valid") || error.toLowerCase().includes("invalid_argument") || error.toLowerCase().includes("not valid")
-                                  ? "🚨 Error de Clave API de Gemini"
-                                  : "Atención"}
-                              </p>
-                              <p className="leading-relaxed text-rose-700">{error}</p>
-                            </div>
-                          </div>
-
-                          {(error.includes("CLAVE API") || error.includes("API_KEY_MISSING") || error.toLowerCase().includes("api key not valid") || error.toLowerCase().includes("key not valid") || error.toLowerCase().includes("invalid_argument") || error.toLowerCase().includes("not valid")) && (
-                            <div className="mt-3 p-4 bg-white border border-rose-200/50 rounded-xl space-y-3 shadow-sm text-slate-700">
-                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                                Configura / Corrige tu Clave API aquí mismo:
-                              </p>
-                              <div className="flex gap-2">
-                                <input
-                                  type="password"
-                                  value={customApiKey}
-                                  onChange={(e) => {
-                                    setCustomApiKey(e.target.value);
-                                    if (testKeyResult) setTestKeyResult(null);
-                                  }}
-                                  placeholder="AIzaSy..."
-                                  className="flex-1 h-10 bg-slate-50 border border-slate-200 rounded-lg px-3 text-xs font-mono text-slate-800 focus:outline-none focus:border-slate-400 transition-colors"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => testManualApiKey(customApiKey)}
-                                  disabled={isTestingKey}
-                                  className="h-10 px-3.5 bg-slate-900 text-[#CCFF00] hover:bg-slate-800 disabled:opacity-50 font-black text-[9px] uppercase tracking-wider rounded-lg transition-all flex items-center justify-center min-w-[70px] cursor-pointer shadow-sm"
-                                >
-                                  {isTestingKey ? (
-                                    <div className="w-3.5 h-3.5 border-2 border-[#CCFF00] border-t-transparent rounded-full animate-spin" />
-                                  ) : (
-                                    "Probar"
-                                  )}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const cleaned = cleanKey(customApiKey);
-                                    if (cleaned === "") {
-                                      localStorage.removeItem("manual_gemini_api_key");
-                                      setCustomApiKey("");
-                                    } else {
-                                      localStorage.setItem("manual_gemini_api_key", cleaned);
-                                      setCustomApiKey(cleaned);
-                                    }
-                                    setTestKeyResult(null);
-                                    setError(null);
-                                  }}
-                                  className="h-10 px-3.5 bg-emerald-600 text-white hover:bg-emerald-700 font-bold text-[9px] uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-sm"
-                                >
-                                  Guardar
-                                </button>
-                              </div>
-
-                              {testKeyResult && (
-                                <div 
-                                  className={`p-2.5 rounded-lg text-[9.5px] leading-normal font-bold flex items-start gap-2 ${
-                                    testKeyResult.success 
-                                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-100/80 shadow-sm' 
-                                      : 'bg-rose-50 text-rose-800 border border-rose-100/80 shadow-sm'
-                                  }`}
-                                >
-                                  <span className="text-[11px] select-none">{testKeyResult.success ? '✅' : '❌'}</span>
-                                  <div className="break-all">{testKeyResult.message}</div>
-                                </div>
-                              )}
-                              
-                              <p className="text-[9.5px] text-slate-400 leading-normal">
-                                Tu clave de Google AI Studio es gratuita y se almacena únicamente de forma local en tu navegador. Puedes crear una clave en <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-emerald-600 font-bold hover:underline">Google AI Studio</a>.
-                              </p>
-                            </div>
-                          )}
-                        </motion.div>
                       )}
                     </div>
 
@@ -3358,14 +3816,25 @@ export default function App() {
 
                     <div className="flex flex-col gap-3 font-sans">
                       <button 
-                        onClick={() => {
+                        onClick={async () => {
                           const cleaned = cleanKey(customApiKey);
                           if (cleaned === "") {
                             localStorage.removeItem("manual_gemini_api_key");
                             setCustomApiKey("");
+                            try {
+                              await setDoc(doc(db, 'settings', 'gemini'), { apiKey: "" });
+                            } catch (err) {
+                              console.error("Error al borrar en base de datos:", err);
+                            }
                           } else {
                             localStorage.setItem("manual_gemini_api_key", cleaned);
                             setCustomApiKey(cleaned);
+                            try {
+                              await setDoc(doc(db, 'settings', 'gemini'), { apiKey: cleaned });
+                              alert("¡Clave de API guardada y sincronizada de forma global en Firestore!");
+                            } catch (err: any) {
+                              alert("Clave guardada localmente, pero no se pudo sincronizar en la base de datos: " + err.message);
+                            }
                           }
                           setTestKeyResult(null);
                           setShowKeyConfig(false);
@@ -3376,10 +3845,16 @@ export default function App() {
                       </button>
                       <div className="flex gap-4">
                         <button 
-                          onClick={() => {
+                          onClick={async () => {
                             setCustomApiKey("");
                             setTestKeyResult(null);
                             localStorage.removeItem("manual_gemini_api_key");
+                            try {
+                              await setDoc(doc(db, 'settings', 'gemini'), { apiKey: "" });
+                              alert("Clave de API eliminada con éxito de la base de datos.");
+                            } catch (err) {
+                              console.error("Error al borrar de Firestore:", err);
+                            }
                             setShowKeyConfig(false);
                           }}
                           className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 rounded-xl font-bold text-[9px] uppercase tracking-widest text-red-500 transition-colors cursor-pointer"
@@ -3547,6 +4022,22 @@ export default function App() {
                 </div>
               )}
             </AnimatePresence>
+
+            {/* User Operator Onboarding Modal Block */}
+            {currentUser && !currentUser.onboardingCompleted && currentUser.role !== 'ADMIN' && (
+              <OnboardingModal 
+                user={currentUser} 
+                onComplete={(updatedUser) => setCurrentUser(updatedUser)} 
+              />
+            )}
+
+            {/* Suggestions Modal Block */}
+            {isSuggestionsOpen && currentUser && (
+              <SuggestionsModal 
+                user={currentUser} 
+                onClose={() => setIsSuggestionsOpen(false)} 
+              />
+            )}
           </>
         )}
       </div>

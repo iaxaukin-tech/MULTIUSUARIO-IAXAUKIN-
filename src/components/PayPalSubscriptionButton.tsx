@@ -37,6 +37,15 @@ export const PayPalSubscriptionButton: React.FC<PayPalSubscriptionButtonProps> =
       setIsInitializing(false);
     };
 
+    // Safety timeout to prevent getting stuck in loading state (e.g. if script is blocked by an AdBlocker or connection fails silently)
+    const timeoutId = setTimeout(() => {
+      const isLoaded = (window as any).paypal_subscription && (window as any).paypal_subscription.Buttons;
+      if (!isLoaded) {
+        setIsInitializing(false);
+        onError('No se pudo establecer conexión con los servidores de PayPal en el tiempo límite. Por favor deshabilita AdBlock u otras extensiones de privacidad, recarga la página, o asegúrate de tener una Clave de Cliente (Client ID) válida en la configuración.');
+      }
+    }, 6000);
+
     if (existingScript) {
       const currentSrc = existingScript.src;
       // If the client ID or source has changed, or if the SDK namespace is missing (failed/stuck state),
@@ -50,6 +59,7 @@ export const PayPalSubscriptionButton: React.FC<PayPalSubscriptionButtonProps> =
           delete (window as any).paypal_subscription;
         }
       } else {
+        clearTimeout(timeoutId);
         initializeButtons();
         return;
       }
@@ -63,6 +73,7 @@ export const PayPalSubscriptionButton: React.FC<PayPalSubscriptionButtonProps> =
     script.async = true;
 
     script.onload = () => {
+      clearTimeout(timeoutId);
       // Let's verify if the namespace actually got loaded
       if ((window as any).paypal_subscription && (window as any).paypal_subscription.Buttons) {
         initializeButtons();
@@ -73,14 +84,15 @@ export const PayPalSubscriptionButton: React.FC<PayPalSubscriptionButtonProps> =
     };
 
     script.onerror = () => {
+      clearTimeout(timeoutId);
       setIsInitializing(false);
-      onError('No se pudo cargar el SDK de PayPal. Por favor, verifica tu conexión a Internet o intenta nuevamente.');
+      onError('No se pudo cargar el SDK de PayPal. Por favor, verifica tu conexión a Internet, deshabilita bloqueadores de publicidad (AdBlock/Brave Shields) o intenta nuevamente.');
     };
 
     document.body.appendChild(script);
 
     return () => {
-      // Cleanup
+      clearTimeout(timeoutId);
     };
   }, [clientId, onError]);
 

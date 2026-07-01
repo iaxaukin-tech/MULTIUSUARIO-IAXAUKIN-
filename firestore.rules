@@ -92,6 +92,18 @@ service cloud.firestore {
           )
           && (
             !('discordWebhookUrl' in data) || data.discordWebhookUrl is string
+          )
+          && (
+            !('onboardingCompleted' in data) || data.onboardingCompleted is bool
+          )
+          && (
+            !('onboardingData' in data) || (
+              data.onboardingData.source is string
+              && data.onboardingData.goldExperience is string
+              && data.onboardingData.primaryGoal is string
+              && data.onboardingData.retentionPreference is string
+              && data.onboardingData.completedAt is string
+            )
           );
       }
 
@@ -159,6 +171,11 @@ service cloud.firestore {
             // Action 7: Retrospectively save affiliate referral code
             (
               incoming().diff(existing()).affectedKeys().hasOnly(['referredBy'])
+            ) ||
+            // Action 8: Onboarding data
+            (
+              incoming().diff(existing()).affectedKeys().hasAny(['onboardingCompleted', 'onboardingData'])
+              && incoming().diff(existing()).affectedKeys().hasOnly(['onboardingCompleted', 'onboardingData'])
             )
           )
         )
@@ -216,6 +233,18 @@ service cloud.firestore {
       allow get: if true; // Readable by all operators and visitors
       allow list: if false; // Block listing to prevent leaking settings structure
       allow create, update, delete: if isAdmin(); // Only admins can design/alter core settings
+    }
+
+    // Rules for /suggestions/{suggestionId}
+    match /suggestions/{suggestionId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn()
+        && isValidId(suggestionId)
+        && incoming().userId == request.auth.uid
+        && incoming().createdAt is string
+        && incoming().title is string && incoming().title.size() <= 200
+        && incoming().description is string && incoming().description.size() <= 4000;
+      allow update, delete: if isAdmin();
     }
 
   }

@@ -33,6 +33,15 @@ export const PayPalTrialButton: React.FC<PayPalTrialButtonProps> = ({
       setIsInitializing(false);
     };
 
+    // Safety timeout to prevent getting stuck in loading state (e.g. if script is blocked by an AdBlocker or connection fails silently)
+    const timeoutId = setTimeout(() => {
+      const isLoaded = (window as any).paypal_trial && (window as any).paypal_trial.HostedButtons;
+      if (!isLoaded) {
+        setIsInitializing(false);
+        onError('No se pudo establecer conexión con los servidores promocionales de PayPal. Por favor deshabilita AdBlock u otras extensiones de privacidad y recarga la página.');
+      }
+    }, 6000);
+
     if (existingScript) {
       const currentSrc = existingScript.src;
       const isStale = currentSrc !== expectedSrc;
@@ -44,6 +53,7 @@ export const PayPalTrialButton: React.FC<PayPalTrialButtonProps> = ({
           delete (window as any).paypal_trial;
         }
       } else {
+        clearTimeout(timeoutId);
         initializeButtons();
         return;
       }
@@ -56,6 +66,7 @@ export const PayPalTrialButton: React.FC<PayPalTrialButtonProps> = ({
     script.async = true;
 
     script.onload = () => {
+      clearTimeout(timeoutId);
       if ((window as any).paypal_trial && (window as any).paypal_trial.HostedButtons) {
         initializeButtons();
       } else {
@@ -65,6 +76,7 @@ export const PayPalTrialButton: React.FC<PayPalTrialButtonProps> = ({
     };
 
     script.onerror = () => {
+      clearTimeout(timeoutId);
       setIsInitializing(false);
       onError('No se pudo cargar la pasarela de la promoción de PayPal. Por favor, verifica tu conexión a Internet o intenta de nuevo.');
     };
@@ -72,7 +84,7 @@ export const PayPalTrialButton: React.FC<PayPalTrialButtonProps> = ({
     document.body.appendChild(script);
 
     return () => {
-      // Cleanup
+      clearTimeout(timeoutId);
     };
   }, [onError, onClearError]);
 

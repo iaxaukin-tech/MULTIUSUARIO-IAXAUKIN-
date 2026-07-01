@@ -25,6 +25,30 @@ export interface User {
   telegramChannelId?: string;
   telegramBotToken?: string;
   discordWebhookUrl?: string;
+  onboardingCompleted?: boolean;
+  onboardingData?: {
+    source: string;
+    goldExperience: string;
+    primaryGoal: string;
+    retentionPreference: string;
+    experience?: string;
+    goldKnowledge?: string;
+    goals?: string[];
+    retentionFactors?: string[];
+    completedAt: string;
+  };
+}
+
+export interface Suggestion {
+  id: string;
+  userId: string;
+  username: string;
+  email: string;
+  title: string;
+  description: string;
+  category: 'FEATURE' | 'BUG' | 'IMPROVEMENT' | 'OTHER';
+  status: 'PENDING' | 'REVIEWED' | 'IMPLEMENTED';
+  createdAt: string;
 }
 
 export interface ActivationCode {

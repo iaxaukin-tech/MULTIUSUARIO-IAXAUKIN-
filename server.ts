@@ -4,7 +4,7 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import dotenv from "dotenv";
 import fs from "fs";
-import { collection, query, where, getDocs, updateDoc, doc } from "firebase/firestore";
+import { collection, query, where, getDocs, updateDoc, doc, getDoc } from "firebase/firestore";
 import { db } from "./src/lib/firebase";
 
 dotenv.config();
@@ -127,6 +127,25 @@ function getAllGeminiApiKeys(): string[] {
   return keys;
 }
 
+// Get the Gemini API Key stored in Firestore settings/gemini securely on the server
+async function getFirestoreGeminiApiKey(): Promise<string | null> {
+  try {
+    const snap = await getDoc(doc(db, "settings", "gemini"));
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data && data.apiKey && typeof data.apiKey === "string") {
+        const val = data.apiKey.trim();
+        if (val && (val.startsWith("AIza") || val.startsWith("AQ.")) && val.length > 20) {
+          return val;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[IA XAU KIN Server] No se pudo obtener la clave API de Firestore settings/gemini:", err);
+  }
+  return null;
+}
+
 // Debug check endpoint
 app.get("/api/config-check", (req, res) => {
   const keys = getAllGeminiApiKeys();
@@ -149,13 +168,20 @@ app.post("/api/analyze", async (req, res) => {
     
     // Choose the API keys we will rotate through
     let candidateKeys: string[] = [];
+    
+    // 1. Add key supplied from header (if any)
     if (headerKey && typeof headerKey === "string" && headerKey.trim() !== "") {
       candidateKeys.push(headerKey.trim());
-      // Let environment-defined keys act as fallback options
-      candidateKeys = candidateKeys.concat(getAllGeminiApiKeys());
-    } else {
-      candidateKeys = getAllGeminiApiKeys();
     }
+    
+    // 2. Add key stored dynamically in Firestore settings/gemini as a primary secure database fallback
+    const dbKey = await getFirestoreGeminiApiKey();
+    if (dbKey) {
+      candidateKeys.push(dbKey);
+    }
+    
+    // 3. Add environment keys
+    candidateKeys = candidateKeys.concat(getAllGeminiApiKeys());
 
     // Deduplicate candidate keys
     candidateKeys = Array.from(new Set(candidateKeys));
